@@ -1,0 +1,20 @@
+{
+  "name": "havoc-speedway",
+  "version": "1.0.0",
+  "description": "Havoc Speedway - Multiplayer Racing Game",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm start",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "build": "cd client && npm run build",
+    "start": "cd server && npm start",
+    "test": "cd server && npm test && cd ../client && npm test"
+  },
+  "keywords": ["game", "multiplayer", "racing", "cards", "nodejs", "react"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
