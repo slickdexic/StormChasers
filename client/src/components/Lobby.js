@@ -36,14 +36,6 @@ const PlayerName = styled.span`
   color: white;
 `;
 
-const PlayerColor = styled.div`
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: ${props => props.color};
-  border: 2px solid white;
-`;
-
 const MainContent = styled.div`
   display: grid;
   grid-template-columns: 1fr 400px;
@@ -277,17 +269,6 @@ function Lobby() {
     numberOfCoins: 2
   });
 
-  const playerColors = {
-    yellow: '#ffd700',
-    orange: '#ff8c00',
-    red: '#ff3838',
-    pink: '#ff69b4',
-    purple: '#9b59b6',
-    blue: '#00d4ff',
-    green: '#00ff88',
-    black: '#2c3e50'
-  };
-
   const handleCreateRoom = (e) => {
     e.preventDefault();
     if (formData.roomName.trim()) {
@@ -313,7 +294,6 @@ function Lobby() {
         <Title>Race Lobby</Title>
         <PlayerInfo>
           <PlayerName>Welcome, {player?.name}!</PlayerName>
-          <PlayerColor color={playerColors[player?.color] || '#00d4ff'} />
         </PlayerInfo>
       </Header>
 
@@ -336,7 +316,7 @@ function Lobby() {
                   <RoomDetails>
                     <span>Host: {room.hostName}</span>
                     <span>{room.playerCount}/{room.maxPlayers} players</span>
-                    <span>{room.settings.numberOfLaps} laps</span>
+                    <span>{room.settings?.numberOfLaps || 3} laps</span>
                   </RoomDetails>
                   <JoinButton 
                     onClick={() => handleJoinRoom(room.id)}

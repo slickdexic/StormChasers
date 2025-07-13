@@ -220,6 +220,49 @@ const ChatSection = styled.div`
   height: 600px;
 `;
 
+const ChatTabs = styled.div`
+  display: flex;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+`;
+
+const ChatTab = styled.button`
+  padding: 8px 16px;
+  border: none;
+  background: ${props => props.active ? 'rgba(0, 212, 255, 0.2)' : 'transparent'};
+  color: ${props => props.active ? '#00d4ff' : 'rgba(255, 255, 255, 0.7)'};
+  border-bottom: 2px solid ${props => props.active ? '#00d4ff' : 'transparent'};
+  cursor: pointer;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 600;
+  transition: all 0.3s ease;
+
+  &:hover {
+    color: #00d4ff;
+    background: rgba(0, 212, 255, 0.1);
+  }
+`;
+
+const PrivateMessageTarget = styled.select`
+  padding: 8px;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  color: white;
+  font-family: 'Rajdhani', sans-serif;
+
+  &:focus {
+    outline: none;
+    border-color: #00d4ff;
+  }
+
+  option {
+    background: #1a1a2e;
+    color: white;
+  }
+`;
+
 const ChatMessages = styled.div`
   flex: 1;
   overflow-y: auto;
@@ -303,12 +346,15 @@ function Room() {
     messages, 
     leaveRoom, 
     sendRoomMessage, 
+    sendPrivateMessage,
     changeColor, 
     startGame 
   } = useGame();
   
   const [chatMessage, setChatMessage] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(null);
+  const [chatMode, setChatMode] = useState('room'); // 'room' or 'private'
+  const [privateTarget, setPrivateTarget] = useState('');
 
   const playerColors = {
     yellow: '#ffd700',
@@ -326,7 +372,11 @@ function Room() {
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (chatMessage.trim()) {
-      sendRoomMessage(chatMessage);
+      if (chatMode === 'room') {
+        sendRoomMessage(chatMessage);
+      } else if (chatMode === 'private' && privateTarget) {
+        sendPrivateMessage(privateTarget, chatMessage);
+      }
       setChatMessage('');
     }
   };
@@ -441,11 +491,40 @@ function Room() {
         </PlayersSection>
 
         <ChatSection>
-          <SectionTitle>Room Chat</SectionTitle>
+          <ChatTabs>
+            <ChatTab 
+              active={chatMode === 'room'} 
+              onClick={() => setChatMode('room')}
+            >
+              Room Chat
+            </ChatTab>
+            <ChatTab 
+              active={chatMode === 'private'} 
+              onClick={() => setChatMode('private')}
+            >
+              Private Message
+            </ChatTab>
+          </ChatTabs>
+
+          {chatMode === 'private' && (
+            <PrivateMessageTarget
+              value={privateTarget}
+              onChange={(e) => setPrivateTarget(e.target.value)}
+            >
+              <option value="">Select player...</option>
+              {currentRoom?.players
+                ?.filter(p => p.id !== player?.id)
+                ?.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+            </PrivateMessageTarget>
+          )}
           
           <ChatMessages>
             {messages
-              .filter(msg => msg.type === 'room')
+              .filter(msg => chatMode === 'room' ? msg.type === 'room' : msg.type === 'private')
               .map((message) => (
                 <Message key={message.id} isPrivate={message.type === 'private'}>
                   <MessageHeader isPrivate={message.type === 'private'}>
@@ -461,8 +540,15 @@ function Room() {
               type="text"
               value={chatMessage}
               onChange={(e) => setChatMessage(e.target.value)}
-              placeholder="Type a message..."
+              placeholder={
+                chatMode === 'room' 
+                  ? "Type a message..." 
+                  : privateTarget 
+                    ? `Private message to ${currentRoom?.players?.find(p => p.id === privateTarget)?.name || 'player'}...`
+                    : "Select a player first..."
+              }
               maxLength={200}
+              disabled={chatMode === 'private' && !privateTarget}
             />
           </form>
         </ChatSection>

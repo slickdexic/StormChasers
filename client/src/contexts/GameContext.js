@@ -131,6 +131,12 @@ export function GameProvider({ children }) {
       dispatch({ type: 'SET_LOADING', payload: false });
     });
 
+    socket.on('room-joined', (data) => {
+      dispatch({ type: 'SET_CURRENT_ROOM', payload: data.room });
+      dispatch({ type: 'SET_CURRENT_VIEW', payload: 'room' });
+      dispatch({ type: 'SET_LOADING', payload: false });
+    });
+
     socket.on('player-joined', (data) => {
       dispatch({ type: 'UPDATE_ROOM', payload: data.room });
     });
@@ -167,10 +173,10 @@ export function GameProvider({ children }) {
 
   // Action creators
   const actions = {
-    joinLobby: (playerName, playerColor) => {
+    joinLobby: (playerName) => {
       if (state.socket) {
         dispatch({ type: 'SET_LOADING', payload: true });
-        state.socket.emit('join-lobby', { name: playerName, color: playerColor });
+        state.socket.emit('join-lobby', { name: playerName });
       }
     },
 

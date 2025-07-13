@@ -110,39 +110,6 @@ const Input = styled.input`
   }
 `;
 
-const ColorGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  margin-top: 10px;
-`;
-
-const ColorOption = styled.button`
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  border: 3px solid ${props => props.selected ? '#ffffff' : 'transparent'};
-  cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-
-  &:hover {
-    transform: scale(1.1);
-    box-shadow: 0 0 20px ${props => props.color};
-  }
-
-  &::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 80%;
-    height: 80%;
-    border-radius: 50%;
-    background: ${props => props.color};
-    transform: translate(-50%, -50%);
-  }
-`;
 
 const JoinButton = styled.button`
   width: 100%;
@@ -172,26 +139,16 @@ const JoinButton = styled.button`
   }
 `;
 
-const playerColors = [
-  { name: 'yellow', value: '#ffd700' },
-  { name: 'orange', value: '#ff8c00' },
-  { name: 'red', value: '#ff3838' },
-  { name: 'pink', value: '#ff69b4' },
-  { name: 'purple', value: '#9b59b6' },
-  { name: 'blue', value: '#00d4ff' },
-  { name: 'green', value: '#00ff88' },
-  { name: 'black', value: '#2c3e50' }
-];
+
 
 function WelcomeScreen() {
   const { joinLobby } = useGame();
   const [playerName, setPlayerName] = useState('');
-  const [selectedColor, setSelectedColor] = useState('blue');
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (playerName.trim()) {
-      joinLobby(playerName.trim(), selectedColor);
+      joinLobby(playerName.trim());
     }
   };
 
@@ -201,8 +158,7 @@ function WelcomeScreen() {
       <ContentWrapper>
         <Title>HAVOC SPEEDWAY</Title>
         <Subtitle>Multiplayer Racing Championship</Subtitle>
-        
-        <FormCard>
+          <FormCard>
           <form onSubmit={handleSubmit}>
             <FormGroup>
               <Label>Enter Your Racing Name</Label>
@@ -216,24 +172,8 @@ function WelcomeScreen() {
               />
             </FormGroup>
 
-            <FormGroup>
-              <Label>Choose Your Car Color</Label>
-              <ColorGrid>
-                {playerColors.map((color) => (
-                  <ColorOption
-                    key={color.name}
-                    type="button"
-                    color={color.value}
-                    selected={selectedColor === color.name}
-                    onClick={() => setSelectedColor(color.name)}
-                    title={color.name}
-                  />
-                ))}
-              </ColorGrid>
-            </FormGroup>
-
             <JoinButton type="submit" disabled={!playerName.trim()}>
-              Join the Race
+              Join the Lobby
             </JoinButton>
           </form>
         </FormCard>

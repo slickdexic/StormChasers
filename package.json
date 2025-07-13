@@ -11,10 +11,20 @@
     "start": "cd server && npm start",
     "test": "cd server && npm test && cd ../client && npm test"
   },
-  "keywords": ["game", "multiplayer", "racing", "cards", "nodejs", "react"],
+  "keywords": [
+    "game",
+    "multiplayer",
+    "racing",
+    "cards",
+    "nodejs",
+    "react"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
   }
 }

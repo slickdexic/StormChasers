@@ -63,7 +63,7 @@ io.on('connection', (socket) => {
 
   // Handle player joining the lobby
   socket.on('join-lobby', (playerData) => {
-    const player = new Player(socket.id, playerData.name, playerData.color);
+    const player = new Player(socket.id, playerData.name); // No color assigned yet
     playerSockets.set(socket.id, player);
     
     socket.emit('lobby-joined', { 
@@ -135,8 +135,14 @@ io.on('connection', (socket) => {
       socket.join(roomId);
       player.roomId = roomId;
       
-      // Notify all players in the room
-      io.to(roomId).emit('player-joined', {
+      // Send room-joined event to the joining player
+      socket.emit('room-joined', {
+        roomId: roomId,
+        room: room.toJSON()
+      });
+      
+      // Notify other players in the room about the new player
+      socket.to(roomId).emit('player-joined', {
         player: player.toJSON(),
         room: room.toJSON()
       });
