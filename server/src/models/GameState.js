@@ -12,6 +12,7 @@ class GameState {
     this.discardPile = [];
     this.toxicSevenCount = 0;
     this.currentSuit = null; // For Queen plays
+    this.stormComplete = false; // Flag when Storm stage ends
     this.dealerSelectionCards = []; // 18 cards for dealer selection
     this.selectedDealerCards = new Map(); // playerId -> card
     
@@ -142,10 +143,12 @@ class GameState {
   }
   // Reset storm-specific state
   resetStormState() {
+    console.log('🔄 resetStormState called - clearing deck and toxicSevenCount');
     this.deck = [];
     this.discardPile = [];
     this.toxicSevenCount = 0;
     this.currentSuit = null;
+    this.stormComplete = false;
   }
 
   // Initialize track positions for all players
@@ -279,14 +282,14 @@ class GameState {
     
     this.deck = [];
     
-    // Create deck(s)
+    // Create deck(s) - ensuring every card has a unique ID
     for (let deckCount = 0; deckCount < settings.numberOfDecks; deckCount++) {
       ranks.forEach(rank => {
         suits.forEach(suit => {
           this.deck.push({
             rank: rank,
             suit: suit,
-            id: `${rank}-${suit}-${deckCount}`
+            id: `${rank}-${suit}-${deckCount}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
           });
         });
       });
@@ -294,6 +297,8 @@ class GameState {
     
     // Shuffle the deck
     this.shuffleDeck();
+    
+    console.log(`🎴 Created deck with ${this.deck.length} cards, each with unique ID`);
   }
 
   // Shuffle the deck
@@ -306,6 +311,23 @@ class GameState {
 
   // Draw a card from the deck
   drawCard() {
+    // If deck is empty, reshuffle discard pile (except top card)
+    if (this.deck.length === 0 && this.discardPile.length > 1) {
+      console.log('🔄 Deck empty! Reshuffling discard pile...');
+      
+      // Keep the top card as the current discard
+      const topCard = this.discardPile.pop();
+      
+      // Move all other discard cards back to deck
+      this.deck = [...this.discardPile];
+      this.discardPile = [topCard];
+      
+      // Shuffle the new deck
+      this.shuffleDeck();
+      
+      console.log(`✅ Reshuffled ${this.deck.length} cards back to deck`);
+    }
+    
     return this.deck.pop();
   }
 
@@ -318,11 +340,13 @@ class GameState {
       hands.set(player.id, []);
     }
     
-    // Deal cards one at a time in clockwise order (as per rules)
-    for (let cardIndex = 0; cardIndex < cardsPerPlayer; cardIndex++) {
+    // Deal cards one at a time clockwise (GameDevGuide requirement)
+    // Start with player after dealer, go clockwise until each has correct number
+    for (let cardRound = 0; cardRound < cardsPerPlayer; cardRound++) {
       for (const player of players) {
         if (this.deck.length > 0) {
-          hands.get(player.id).push(this.drawCard());
+          const card = this.drawCard();
+          hands.get(player.id).push(card);
         }
       }
     }
@@ -332,24 +356,42 @@ class GameState {
       const firstCard = this.drawCard();
       this.discardPile.push(firstCard);
       
+      console.log(`🔄 Initial discard card dealt: ${firstCard.rank} of ${firstCard.suit} (ID: ${firstCard.id})`);
+      
       // Handle special initial card rules
       if (firstCard.rank === 'Q') {
         // Queen calls the suit of the bottom card in the deck
         if (this.deck.length > 0) {
           this.currentSuit = this.deck[0].suit;
+          console.log(`👸 Queen calls suit: ${this.currentSuit}`);
         }
       } else if (firstCard.rank === '7') {
         // 7 as first card is considered toxic immediately
         this.toxicSevenCount = 1;
+        console.log(`☠️ Seven is TOXIC! toxicSevenCount set to: ${this.toxicSevenCount}`);
+        console.log(`🔍 Current discard pile:`, this.discardPile.map(c => `${c.rank} of ${c.suit}`));
       }
     }
+    
+    console.log(`🎯 Final dealing state - toxicSevenCount: ${this.toxicSevenCount}, topCard: ${this.getTopCard()?.rank || 'none'}`);
     
     return hands;
   }
   drawCards(count) {
     const cards = [];
-    for (let i = 0; i < count && this.deck.length > 0; i++) {
-      cards.push(this.drawCard());
+    for (let i = 0; i < count; i++) {
+      // Check if deck is empty before drawing
+      if (this.deck.length === 0 && this.discardPile.length <= 1) {
+        console.log('⚠️ No more cards available to draw!');
+        break; // No more cards available
+      }
+      
+      const card = this.drawCard();
+      if (card) {
+        cards.push(card);
+      } else {
+        break; // No more cards
+      }
     }
     return cards;
   }
@@ -358,16 +400,26 @@ class GameState {
   playCard(card, calledSuit = null) {
     this.discardPile.push(card);
     
-    // Handle special card effects
-    if (card.rank === 'Q' && calledSuit) {
-      this.currentSuit = calledSuit;
-    } else if (card.rank === '7') {
+  // Handle special card effects
+  if (card.rank === 'Q' && calledSuit) {
+    this.currentSuit = calledSuit;
+    // Don't reset toxic seven count - Queens can be played on non-toxic sevens
+  } else if (card.rank === '7') {
+    // Check if this 7 is being played on a toxic 7 (stacking) or starting new toxic effect
+    const topCard = this.getTopCard();
+    if (this.toxicSevenCount > 0) {
+      // Stacking on existing toxic 7 - add to count
       this.toxicSevenCount += 1;
     } else {
-      // Reset toxic seven count for non-seven plays
-      this.toxicSevenCount = 0;
-      this.currentSuit = null;
+      // Playing 7 on non-toxic card - starts new toxic effect
+      this.toxicSevenCount = 1;
     }
+    this.currentSuit = null; // Reset Queen suit when toxic 7 is played
+  } else {
+    // Reset toxic seven count for non-Queen, non-seven plays
+    this.toxicSevenCount = 0;
+    this.currentSuit = null;
+  }
   }
 
   // Get the top card of the discard pile
@@ -384,9 +436,9 @@ class GameState {
       return card.rank === '7';
     }
     
-    // Queen can be played on anything except toxic 7
+    // Queen can be played on anything EXCEPT toxic 7 (but we already checked above)
     if (card.rank === 'Q') {
-      return this.toxicSevenCount === 0;
+      return true; // Queens are wild cards when no toxic 7 is active
     }
     
     // Check suit or rank match
@@ -449,6 +501,7 @@ class GameState {
       topCard: this.getTopCard(),
       toxicSevenCount: this.toxicSevenCount,
       currentSuit: this.currentSuit,
+      stormComplete: this.stormComplete,
       coinPurseSize: this.coinPurse.length,
       finishedPlayers: this.finishedPlayers,
       gameComplete: this.gameComplete,

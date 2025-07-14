@@ -69,6 +69,14 @@ class Player {
     this.pitLanePosition = 0;
   }
 
+  // Reset player for new Storm stage
+  resetForNewStorm() {
+    this.cards = [];
+    this.stormFinishOrder = null;
+    this.isActive = false;
+    // Keep dealer button, color, and other persistent properties
+  }
+
   // Set Storm stage finish order
   setStormFinishOrder(order) {
     this.stormFinishOrder = order;

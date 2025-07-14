@@ -86,7 +86,8 @@ class GameRoom {
 
   // Update room settings (only host can do this)
   updateSettings(newSettings, hostId) {
-    if (this.host.id !== hostId) {
+    // CRITICAL: Always validate hostId parameter
+    if (hostId && this.host.id !== hostId) {
       return false; // Only host can update settings
     }
 
@@ -94,7 +95,7 @@ class GameRoom {
       return false; // Can't change settings after game starts
     }
 
-    // Validate settings
+    // Validate settings per GameDevGuide specifications
     const validSettings = {};
     
     if (newSettings.numberOfLaps >= 1 && newSettings.numberOfLaps <= 5) {
@@ -167,6 +168,11 @@ class GameRoom {
 
   // Setup Storm stage
   setupStormStage() {
+    // Reset all players for new Storm round
+    this.players.forEach(player => {
+      player.resetForNewStorm();
+    });
+    
     // Create and shuffle deck
     this.gameState.createDeck(this.settings);
     
@@ -180,13 +186,16 @@ class GameRoom {
     const dealerIndex = this.players.findIndex(p => p.dealerButton);
     const firstPlayerIndex = dealerIndex !== -1 ? (dealerIndex + 1) % this.players.length : 0;
     
-    // Check if first card is an Ace (skip first player)
+    // Check if first card is an Ace (skip first player) - GameDevGuide rule
     const topCard = this.gameState.getTopCard();
     if (topCard && topCard.rank === 'A') {
+      console.log(`👑 First card is Ace - skipping first player`);
       this.setActivePlayer((firstPlayerIndex + 1) % this.players.length);
     } else {
       this.setActivePlayer(firstPlayerIndex);
     }
+    
+    console.log(`🎯 First player set: ${this.getActivePlayer()?.name}, top card: ${topCard ? `${topCard.rank} of ${topCard.suit}` : 'None'}`);
   }
 
   // Start animated card dealing
@@ -202,7 +211,7 @@ class GameRoom {
     
     console.log(`💳 Dealing ${cardsPerHand} cards per hand to ${this.players.length} players`);
     
-    // Create dealing order: start with player after dealer, go clockwise
+    // Create dealing order: start with player after dealer, go clockwise (GameDevGuide requirement)
     const dealingOrder = [];
     for (let i = 0; i < this.players.length; i++) {
       const playerIndex = (dealerIndex + 1 + i) % this.players.length;
@@ -212,7 +221,6 @@ class GameRoom {
     let currentCard = 0;
     
     const dealNextCard = () => {
-      console.log(`🎯 Dealing round ${currentCard + 1}/${cardsPerHand}`);
       if (currentCard >= cardsPerHand) {
         // All cards dealt, now flip one card for discard pile
         console.log('✅ All cards dealt, dealing discard card');
@@ -220,7 +228,9 @@ class GameRoom {
         return;
       }
       
-      // Deal one card to each player in order
+      console.log(`🎯 Dealing round ${currentCard + 1}/${cardsPerHand}`);
+      
+      // Deal one card to each player in order (GameDevGuide: 0.3s per card)
       dealingOrder.forEach((player, index) => {
         setTimeout(() => {
           const playerCards = this.dealHands.get(player.id) || [];
@@ -240,17 +250,17 @@ class GameRoom {
               totalPlayers: this.players.length
             });
           }
-        }, index * 400); // Increased delay from 200ms to 400ms for better visibility
+        }, index * 300); // GameDevGuide: 0.3s per card = 300ms
       });
       
       currentCard++;
       
-      // Schedule next round of dealing
-      setTimeout(() => dealNextCard(), this.players.length * 400 + 800); // Increased delays
+      // Schedule next round of dealing (GameDevGuide timing compliance)
+      setTimeout(() => dealNextCard(), this.players.length * 300 + 100); // 300ms per player + small buffer
     };
     
-    // Start the dealing animation
-    setTimeout(() => dealNextCard(), 1000); // Increased initial delay
+    // Start the dealing animation with proper delay
+    setTimeout(() => dealNextCard(), 1000); // Initial delay for better UX
   }
 
   // Deal initial discard card
@@ -354,9 +364,24 @@ class GameRoom {
     }
   }
 
-  // Get next player in turn order
+  // Get next player in turn order (skip finished players)
   getNextPlayer(currentPlayerIndex) {
-    return (currentPlayerIndex + 1) % this.players.length;
+    const totalPlayers = this.players.length;
+    let nextIndex = (currentPlayerIndex + 1) % totalPlayers;
+    let attempts = 0;
+    
+    // Keep looking for a player who hasn't finished Storm yet
+    while (attempts < totalPlayers) {
+      const nextPlayer = this.players[nextIndex];
+      if (nextPlayer.stormFinishOrder === null) {
+        return nextIndex;
+      }
+      nextIndex = (nextIndex + 1) % totalPlayers;
+      attempts++;
+    }
+    
+    // If all players finished, return current index
+    return currentPlayerIndex;
   }
 
   // Set the active player
@@ -459,50 +484,182 @@ class GameRoom {
 
   // Handle Storm stage card play
   playCard(playerId, cardId, calledSuit = null) {
+    console.log(`🎯 PlayCard attempt: Player ${playerId}, Card ID ${cardId}, CalledSuit ${calledSuit}`);
+    
     const player = this.getPlayer(playerId);
-    if (!player || !player.isActive) {
+    if (!player) {
+      console.log(`❌ Player not found: ${playerId}`);
+      return { success: false, message: 'Player not found' };
+    }
+    
+    if (!player.isActive) {
+      console.log(`❌ Player not active: ${player.name} (isActive: ${player.isActive})`);
+      console.log(`Current player index: ${this.gameState.currentPlayerIndex}, Player index: ${this.players.indexOf(player)}`);
       return { success: false, message: 'Not your turn' };
     }
 
+    console.log(`✅ Player ${player.name} is active, attempting to remove card ID: ${cardId}`);
+    console.log(`Player has ${player.cards.length} cards:`);
+    player.cards.forEach((c, i) => {
+      console.log(`  [${i}] ${c.rank} of ${c.suit} (ID: ${c.id || 'MISSING ID!'})`);
+    });
+    
+    if (!cardId) {
+      console.log(`❌ No card ID provided`);
+      return { success: false, message: 'Card ID is required' };
+    }
+    
     const card = player.removeCard(cardId);
     if (!card) {
+      console.log(`❌ Card not found in player hand with ID: ${cardId}`);
       return { success: false, message: 'Card not found' };
     }
 
+    console.log(`✅ Found and removed card: ${card.rank} of ${card.suit} (ID: ${card.id})`);
+    
     const topCard = this.gameState.getTopCard();
+    console.log(`Top card: ${topCard ? `${topCard.rank} of ${topCard.suit}` : 'None'}`);
+    console.log(`Toxic seven count: ${this.gameState.toxicSevenCount}`);
+    
     if (!this.gameState.canPlayCard(card, topCard)) {
+      console.log(`❌ Card cannot be played - returning to hand`);
       // Return card to player's hand
       player.addCards([card]);
       return { success: false, message: 'Invalid card play' };
     }
 
+    console.log(`✅ Card can be played! Playing ${card.rank} of ${card.suit}`);
+    
+    // Check two-player endgame Queen rule - CRITICAL FIX
+    const remainingPlayers = this.players.filter(p => p.stormFinishOrder === null);
+    const isFinishingWithQueen = player.cards.length === 0 && card.rank === 'Q'; // Player would have 0 cards after playing this Queen
+    const isTwoPlayerEndgame = remainingPlayers.length === 2;
+    
+    if (isFinishingWithQueen && isTwoPlayerEndgame) {
+      console.log(`👸 Two-player endgame: Player finishing with Queen, no suit call needed`);
+      calledSuit = null; // Override any called suit - per GameDevGuide rule
+    }
+    
     // Play the card
     this.gameState.playCard(card, calledSuit);
     
     // Check if player finished
     if (player.hasFinishedStorm()) {
-      this.handleStormPlayerFinished(player);
+      console.log(`🏆 Player ${player.name} finished Storm!`);
+      const finishResult = this.handleStormPlayerFinished(player);
+      
+      // If Storm is complete, return special result
+      if (finishResult && finishResult.stormComplete) {
+        console.log(`🎯 Storm stage complete! Returning special result.`);
+        return { 
+          success: true, 
+          card, 
+          gameState: this.gameState.toJSON(),
+          stormComplete: true,
+          showResults: true
+        };
+      } else if (finishResult && finishResult.playerFinished) {
+        console.log(`🏆 Player finished but Storm continues`);
+        // Continue with normal turn advancement
+      }
     }
     
     // Handle special card effects
     if (card.rank === 'A') {
+      console.log(`👑 Ace played - skipping next player`);
       // Skip next player
       this.advanceToNextPlayer(); // Skip one
     }
     
     this.advanceToNextPlayer();
+    console.log(`🔄 Advanced to next player`);
     
-    return { success: true, card, gameState: this.gameState.toJSON() };
+    // Check if player finished for return value
+    const playerFinished = player.hasFinishedStorm();
+    
+    return { 
+      success: true, 
+      card, 
+      gameState: this.gameState.toJSON(),
+      playerFinished: playerFinished
+    };
+  }
+
+  // Handle Storm stage card draw
+  drawCards(playerId, count = null) {
+    const player = this.getPlayer(playerId);
+    if (!player || !player.isActive) {
+      return { success: false, message: 'Not your turn' };
+    }
+
+    // Determine how many cards to draw
+    let cardsToDraw;
+    if (this.gameState.toxicSevenCount > 0) {
+      // Toxic seven is active - must draw (toxicSevenCount * 2) cards
+      cardsToDraw = this.gameState.toxicSevenCount * 2;
+      console.log(`☠️ Toxic seven active! Drawing ${cardsToDraw} cards (${this.gameState.toxicSevenCount} toxic sevens)`);
+    } else {
+      // Normal draw - use provided count or default to 1
+      cardsToDraw = count || 1;
+      console.log(`📋 Normal draw: ${cardsToDraw} cards`);
+    }
+
+    const drawnCards = this.gameState.drawCards(cardsToDraw);
+    
+    if (drawnCards.length === 0) {
+      return { success: false, message: 'No cards left in deck' };
+    }
+    
+    player.addCards(drawnCards);
+    console.log(`✅ Player ${player.name} drew ${drawnCards.length} cards`);
+    
+    // Reset toxic seven count after drawing
+    if (this.gameState.toxicSevenCount > 0) {
+      console.log(`🔄 Resetting toxic seven count from ${this.gameState.toxicSevenCount} to 0`);
+      this.gameState.toxicSevenCount = 0;
+    }
+    
+    // Advance to next player
+    this.advanceToNextPlayer();
+    
+    return { 
+      success: true, 
+      drawnCards, 
+      cardCount: drawnCards.length,
+      gameState: this.gameState.toJSON() 
+    };
   }
 
   // Handle player finishing Storm stage
   handleStormPlayerFinished(player) {
-    const finishedCount = this.players.filter(p => p.stormFinishOrder !== null).length;
-    player.setStormFinishOrder(finishedCount + 1);
+    // Don't reassign if player already finished
+    if (player.stormFinishOrder !== null) {
+      console.log(`⚠️ Player ${player.name} already has finish order ${player.stormFinishOrder}`);
+      return;
+    }
     
-    // Check if all players finished
-    const allFinished = this.players.every(p => p.stormFinishOrder !== null);
-    if (allFinished) {
+    const finishedCount = this.players.filter(p => p.stormFinishOrder !== null).length;
+    const newFinishOrder = finishedCount + 1;
+    player.setStormFinishOrder(newFinishOrder);
+    
+    console.log(`🏆 Player ${player.name} finished in position ${newFinishOrder}`);
+    
+    // Check if Storm stage should end (only one or no players left with cards)
+    const playersWithCards = this.players.filter(p => p.stormFinishOrder === null);
+    
+    if (playersWithCards.length <= 1) {
+      console.log(`🎯 Storm stage ending - ${playersWithCards.length} players remaining with cards`);
+      
+      // If exactly one player remains, give them the last position
+      if (playersWithCards.length === 1) {
+        const lastPlayer = playersWithCards[0];
+        const lastFinishOrder = finishedCount + 2; // +1 for current player, +1 for last player
+        lastPlayer.setStormFinishOrder(lastFinishOrder);
+        console.log(`🏆 ${lastPlayer.name} assigned final position ${lastFinishOrder}`);
+      }
+      
+      console.log(`🎯 All players have finish orders! Storm stage complete.`);
+      
       // Advance dealer button
       const currentDealerIndex = this.players.findIndex(p => p.dealerButton);
       if (currentDealerIndex !== -1) {
@@ -510,17 +667,17 @@ class GameRoom {
         const nextDealerIndex = (currentDealerIndex + 1) % this.players.length;
         this.players[nextDealerIndex].setDealerButton(true);
         this.gameState.dealerIndex = nextDealerIndex;
+        console.log(`🎯 Dealer button advanced to ${this.players[nextDealerIndex].name}`);
       }
       
-      // Advance to next stage
-      if (this.gameState.stormRound === 1) {
-        // First storm, go to lane selection
-        this.advanceToNextStage(); // lane-selection
-      } else {
-        // Subsequent storms, go to coin stage
-        this.gameState.currentStage = 'coin';
-        this.setupCoinStage();
-      }
+      // Signal that Storm stage is complete and show results
+      this.gameState.stormComplete = true;
+      
+      return { stormComplete: true, showResults: true };
+    } else {
+      console.log(`🎮 Storm continues - ${playersWithCards.length} players still have cards`);
+      // Return info that player finished but game continues
+      return { playerFinished: true, continueGame: true };
     }
   }
 

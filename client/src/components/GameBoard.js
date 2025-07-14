@@ -23,6 +23,66 @@ const pulseGlow = keyframes`
   50% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.6), 0 0 30px rgba(0, 212, 255, 0.2); }
 `;
 
+const cardFly = keyframes`
+  0% { 
+    transform: scale(1.3) translateY(0px) rotate(0deg); 
+    filter: drop-shadow(0 10px 20px rgba(0, 212, 255, 0.5));
+  }
+  50% { 
+    transform: scale(1.4) translateY(-10px) rotate(5deg); 
+    filter: drop-shadow(0 15px 25px rgba(0, 212, 255, 0.7));
+  }
+  100% { 
+    transform: scale(1.3) translateY(0px) rotate(0deg); 
+    filter: drop-shadow(0 10px 20px rgba(0, 212, 255, 0.5));
+  }
+`;
+
+// GameDevGuide compliant - 0.3s card dealing animations
+const flyToPlayer1 = keyframes`
+  0% { 
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% { 
+    transform: translate(-50%, -50%) translateY(300px) scale(0.7);
+    opacity: 0.8;
+  }
+`;
+
+const flyToPlayer2 = keyframes`
+  0% { 
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% { 
+    transform: translate(-50%, -50%) translateX(400px) scale(0.7);
+    opacity: 0.8;
+  }
+`;
+
+const flyToPlayer3 = keyframes`
+  0% { 
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% { 
+    transform: translate(-50%, -50%) translateY(-300px) scale(0.7);
+    opacity: 0.8;
+  }
+`;
+
+const flyToPlayer4 = keyframes`
+  0% { 
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% { 
+    transform: translate(-50%, -50%) translateX(-400px) scale(0.7);
+    opacity: 0.8;
+  }
+`;
+
 const GameContainer = styled.div`
   min-height: 100vh;
   padding-top: 140px; /* Account for fixed header */
@@ -358,6 +418,17 @@ const CardDealingOverlay = styled.div`
   justify-content: center;
   z-index: 1000;
   animation: ${fadeIn} 0.3s ease-out;
+  
+  @keyframes cardToHand {
+    from {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 1;
+    }
+    to {
+      transform: translate(200px, 300px) scale(0.8);
+      opacity: 0.8;
+    }
+  }
 `;
 
 const DealingMessage = styled.div`
@@ -561,6 +632,84 @@ const DiceContainer = styled.div`
   border: 2px solid rgba(255, 255, 255, 0.2);
 `;
 
+const StormResultsOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  animation: ${fadeIn} 0.3s ease-out;
+`;
+
+const StormResultsModal = styled.div`
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #1a1a2e 100%);
+  border: 3px solid #ffd700;
+  border-radius: 20px;
+  padding: 3rem;
+  min-width: 500px;
+  max-width: 600px;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+
+  h2 {
+    color: #ffd700;
+    font-size: 2.5rem;
+    margin-bottom: 2rem;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  }
+`;
+
+const ResultsList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+`;
+
+const ResultItem = styled.div`
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: ${props => 
+    props.$position === 1 ? 'linear-gradient(135deg, #ffd700 0%, #ffed4e 100%)' :
+    props.$position === 2 ? 'linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 100%)' :
+    props.$position === 3 ? 'linear-gradient(135deg, #cd7f32 0%, #e6a85c 100%)' :
+    'linear-gradient(135deg, #4a4a4a 0%, #6a6a6a 100%)'
+  };
+  color: ${props => props.$position <= 3 ? '#000' : '#fff'};
+  border-radius: 10px;
+  font-weight: bold;
+  font-size: 1.1rem;
+
+  .position {
+    font-size: 1.5rem;
+    font-weight: bold;
+  }
+
+  .player-name {
+    text-align: left;
+  }
+
+  .card-count {
+    font-size: 0.9rem;
+    opacity: 0.8;
+  }
+`;
+
+const WaitingMessage = styled.div`
+  color: #ffd700;
+  font-size: 1.1rem;
+  font-style: italic;
+  opacity: 0.8;
+`;
+
 function GameBoard() {
   const { 
     currentRoom, 
@@ -570,15 +719,30 @@ function GameBoard() {
     leaveRoom,
     selectDealerCard,
     cardDealingAnimation,
-    discardCardDealt
+    discardCardDealt,
+    drawCards,
+    playCard,
+    stormResults,
+    continueToNextStage
     // Game actions would be added here
   } = useGame();
   
   const [selectedLane, setSelectedLane] = useState(null);
   const [lastDiceRoll, setLastDiceRoll] = useState([1, 1]);
+  const [selectedQueenCard, setSelectedQueenCard] = useState(null);
+  const [queenSelectingPlayer, setQueenSelectingPlayer] = useState(null);
 
   const currentStage = currentRoom?.gameState?.currentStage || 'lobby';
   const players = currentRoom?.players || [];
+
+  // Ensure players have proper card count data for the header display
+  const playersWithCardCount = players.map(p => ({
+    ...p,
+    cardCount: p.cardCount || p.cards?.length || 0
+  }));
+
+  // Check if current player is the host
+  const isHost = currentRoom?.host?.id === player?.id;
 
   // Mock data for demonstration
   const playerHand = [
@@ -710,12 +874,12 @@ function GameBoard() {
               <DealerAnnouncement>
                 <h3>🏆 Dealer Selection Results</h3>
                 
-                {/* Show all selected cards in a row */}
+                {/* Show all selected cards in a row - GameDevGuide compliance */}
                 <SelectedCardsDisplay>
                   {currentRoom?.players?.map((p, index) => (
                     p.selectedDealerCard && (
                       <SelectedCardResult key={p.id}>
-                        <PlayerName color={p.color}>{p.name}</PlayerName>
+                        <PlayerName color={p.color === 'black' ? 'white' : p.color}>{p.name}</PlayerName>
                         <PlayingCard
                           rank={p.selectedDealerCard.rank}
                           suit={p.selectedDealerCard.suit}
@@ -728,7 +892,7 @@ function GameBoard() {
                         {p.dealerButton && (
                           <DealerIndicator>
                             <span>🏆 DEALER</span>
-                            <small>Lowest Card</small>
+                            <small>Lowest Card (7 low, Ace high)</small>
                           </DealerIndicator>
                         )}
                       </SelectedCardResult>
@@ -762,126 +926,374 @@ function GameBoard() {
         );
 
       case 'storm':
+        // Check if Storm is complete (all players have finishing order)
+        const stormComplete = currentRoom?.players?.every(p => p.stormFinishOrder !== null);
+        
+        if (stormComplete) {
+          // Show Storm results
+          const sortedPlayers = [...(currentRoom?.players || [])].sort((a, b) => a.stormFinishOrder - b.stormFinishOrder);
+          
+          return (
+            <StormContainer>
+              <GamePlayArea>
+                <StageTitle>🏆 Storm Results</StageTitle>
+                
+                <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '15px', padding: '2rem', margin: '2rem auto', maxWidth: '600px' }}>
+                  <h3 style={{ color: 'white', textAlign: 'center', marginBottom: '1.5rem' }}>Final Rankings</h3>
+                  
+                  {sortedPlayers.map((p, index) => (
+                    <div key={p.id} style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '1rem',
+                      background: index === 0 ? 'rgba(255,215,0,0.2)' : 'rgba(255,255,255,0.05)',
+                      borderRadius: '10px',
+                      marginBottom: '0.5rem',
+                      border: index === 0 ? '2px solid gold' : '1px solid rgba(255,255,255,0.2)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div style={{
+                          width: '30px',
+                          height: '30px',
+                          borderRadius: '50%',
+                          background: p.stormFinishOrder === 1 ? 'gold' : p.stormFinishOrder === 2 ? 'silver' : p.stormFinishOrder === 3 ? '#cd7f32' : '#666',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 'bold',
+                          color: 'white'
+                        }}>
+                          {p.stormFinishOrder}
+                        </div>
+                        <span style={{ color: 'white', fontSize: '1.1rem', fontWeight: 'bold' }}>{p.name}</span>
+                      </div>
+                      <div style={{ color: '#00d4ff', fontSize: '0.9rem' }}>
+                        {p.stormFinishOrder === 1 ? '🏆 Winner!' : 
+                         p.stormFinishOrder === 2 ? '🥈 Second Place' :
+                         p.stormFinishOrder === 3 ? '🥉 Third Place' : '4th Place'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                {player?.isHost ? (
+                  <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+                    <ContinueButton onClick={() => {
+                      console.log(`🎯 Continuing to next stage from Storm round ${currentRoom?.gameState?.stormRound}`);
+                      // Use the game context continue function
+                      continueToNextStage();
+                    }}>
+                      Continue to {currentRoom?.gameState?.stormRound === 1 ? 'Lane Selection' : 'Coin Stage'}
+                    </ContinueButton>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', marginTop: '2rem', color: 'white' }}>
+                    <p>🕒 Waiting for host to continue...</p>
+                  </div>
+                )}
+              </GamePlayArea>
+            </StormContainer>
+          );
+        }
+        
         return (
           <StormContainer>
-            {/* Card Dealing Animation Overlay */}
-            {cardDealingAnimation && (
-              <CardDealingOverlay>
-                <DealingMessage>
-                  Dealing card {cardDealingAnimation.cardIndex + 1} of {cardDealingAnimation.totalCards}
-                  <br />
-                  <strong>to {cardDealingAnimation.playerName}</strong>
-                  <br />
-                  <small>Player {cardDealingAnimation.dealingToPlayer} of {cardDealingAnimation.totalPlayers}</small>
-                </DealingMessage>
-                <DealingProgress>
-                  <div 
-                    style={{ 
-                      width: `${((cardDealingAnimation.cardIndex + 1) / cardDealingAnimation.totalCards) * 100}%`,
-                      background: 'linear-gradient(45deg, #00d4ff, #0099cc)',
-                      height: '100%',
-                      borderRadius: '10px',
-                      transition: 'width 0.3s ease'
-                    }} 
-                  />
-                </DealingProgress>
-              </CardDealingOverlay>
-            )}
-            
-            {/* Discard Card Dealing Animation */}
-            {discardCardDealt && (
-              <CardDealingOverlay>
-                <DealingMessage>
-                  <strong>Turning over first card for discard pile...</strong>
-                  <br />
-                  <PlayingCard
-                    rank={discardCardDealt.card.rank}
-                    suit={discardCardDealt.card.suit}
-                    size="large"
-                    style={{ marginTop: '1rem' }}
-                  />
-                </DealingMessage>
-              </CardDealingOverlay>
-            )}
-            
             <GamePlayArea>
               <StageTitle>Storm Stage</StageTitle>
               
               <DiscardPileArea>
-                <div style={{ display: 'flex', gap: '3rem', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', gap: '4rem', alignItems: 'flex-start', justifyContent: 'center' }}>
                   {/* Discard Pile on LEFT */}
-                  <div style={{ textAlign: 'center' }}>
+                  <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
                     <h4 style={{ color: 'white', marginBottom: '1rem' }}>Discard Pile</h4>
                     <PlayingCard
                       rank={currentRoom?.gameState?.topCard?.rank || '8'}
                       suit={currentRoom?.gameState?.topCard?.suit || 'spades'}
                       size="large"
                     />
+                    
+                    {/* Queen called suit display */}
+                    {currentRoom?.gameState?.topCard?.rank === 'Q' && 
+                     currentRoom?.gameState?.currentSuit && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '0',
+                        left: '0',
+                        right: '0',
+                        bottom: '0',
+                        pointerEvents: 'none',
+                        zIndex: 5
+                      }}>
+                        {/* Q and suit in top left corner */}
+                        <div style={{
+                          position: 'absolute',
+                          top: '8px',
+                          left: '8px',
+                          background: 'rgba(255,255,255,0.9)',
+                          borderRadius: '4px',
+                          padding: '2px 6px',
+                          fontSize: '0.8rem',
+                          fontWeight: 'bold',
+                          color: '#333'
+                        }}>
+                          Q{currentRoom.gameState.topCard.suit === 'hearts' ? '♥️' : 
+                            currentRoom.gameState.topCard.suit === 'diamonds' ? '♦️' : 
+                            currentRoom.gameState.topCard.suit === 'spades' ? '♠️' : '♣️'}
+                        </div>
+                        {/* Large called suit symbol in middle */}
+                        <div style={{
+                          position: 'absolute',
+                          top: '50%',
+                          left: '50%',
+                          transform: 'translate(-50%, -50%)',
+                          fontSize: '3rem',
+                          textShadow: '0 0 4px rgba(0,0,0,0.5)'
+                        }}>
+                          {currentRoom.gameState.currentSuit === 'hearts' ? '♥️' : 
+                           currentRoom.gameState.currentSuit === 'diamonds' ? '♦️' : 
+                           currentRoom.gameState.currentSuit === 'spades' ? '♠️' : '♣️'}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Queen suit selection chat bubble */}
+                    {selectedQueenCard && 
+                     queenSelectingPlayer === player?.id && (
+                      <div style={{
+                        position: 'absolute',
+                        left: '-120px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'white',
+                        border: '2px solid #333',
+                        borderRadius: '15px',
+                        padding: '10px',
+                        minWidth: '100px',
+                        boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
+                        zIndex: 10
+                      }}>
+                        <div style={{ color: '#333', fontWeight: 'bold', marginBottom: '8px', fontSize: '0.9rem' }}>
+                          Call Suit:
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          {['hearts', 'diamonds', 'spades', 'clubs'].map(suit => (
+                            <button
+                              key={suit}
+                              onClick={() => {
+                                // Call the suit for the Queen
+                                console.log('👸 Playing Queen with suit:', suit, 'Card ID:', selectedQueenCard.id);
+                                playCard(selectedQueenCard.id, suit);
+                                setSelectedQueenCard(null); // Clear selection
+                                setQueenSelectingPlayer(null); // Clear player tracking
+                              }}
+                              style={{
+                                background: 'none',
+                                border: '1px solid #333',
+                                borderRadius: '4px',
+                                padding: '4px',
+                                cursor: 'pointer',
+                                fontSize: '20px'
+                              }}
+                            >
+                              {suit === 'hearts' ? '♥️' : 
+                               suit === 'diamonds' ? '♦️' : 
+                               suit === 'spades' ? '♠️' : '♣️'}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedQueenCard(null);
+                            setQueenSelectingPlayer(null);
+                          }}
+                          style={{
+                            marginTop: '8px',
+                            background: '#ff4444',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '4px 8px',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            width: '100%'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        {/* Chat bubble arrow */}
+                        <div style={{
+                          position: 'absolute',
+                          right: '-10px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          width: 0,
+                          height: 0,
+                          borderTop: '10px solid transparent',
+                          borderBottom: '10px solid transparent',
+                          borderLeft: '10px solid white'
+                        }} />
+                      </div>
+                    )}
                   </div>
                   
                   {/* Stock Pile on RIGHT */}
-                  <div style={{ textAlign: 'center' }}>
-                    <StockPileLabel>
-                      <div style={{ color: 'white', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                        Draw {currentRoom?.gameState?.toxicSevenDrawCount || 1}
+                  <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <div style={{ 
+                        color: currentRoom?.gameState?.toxicSevenCount > 0 ? '#ff4444' : 'white', 
+                        fontSize: '1.1rem', 
+                        fontWeight: 'bold',
+                        textShadow: currentRoom?.gameState?.toxicSevenCount > 0 ? '0 0 10px #ff4444' : 'none'
+                      }}>
+                        Draw {currentRoom?.gameState?.toxicSevenCount > 0 ? (currentRoom.gameState.toxicSevenCount * 2) : 1}
                       </div>
-                      <div style={{ color: '#00d4ff', fontSize: '0.9rem' }}>
-                        {currentRoom?.gameState?.deckSize || 20} cards
+                      <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.9rem' }}>
+                        {currentRoom?.gameState?.deckSize || 0} cards remaining
                       </div>
-                    </StockPileLabel>
-                    <CardStack 
-                      cards={Array(Math.min(currentRoom?.gameState?.deckSize || 20, 8)).fill({})} 
-                      size="large" 
-                    />
+                    </div>
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      <PlayingCard
+                        isBack={true}
+                        size="large"
+                        interactive={currentRoom?.gameState?.currentPlayer === player?.id}
+                        onClick={() => {
+                          if (currentRoom?.gameState?.currentPlayer === player?.id) {
+                            drawCards();
+                          }
+                        }}
+                        style={{ 
+                          cursor: currentRoom?.gameState?.currentPlayer === player?.id ? 'pointer' : 'default',
+                          filter: currentRoom?.gameState?.toxicSevenCount > 0 ? 'sepia(1) hue-rotate(320deg) saturate(2)' : 'none',
+                          boxShadow: currentRoom?.gameState?.toxicSevenCount > 0 ? '0 0 20px #ff4444' : 'none'
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               </DiscardPileArea>
               
               <PlayerHandArea>
-                <h4 style={{ color: 'white', marginBottom: '1rem', textAlign: 'center' }}>
-                  Your Hand
+                <h4 style={{ 
+                  color: currentRoom?.gameState?.currentPlayer === player?.id ? '#00d4ff' : 'white', 
+                  marginBottom: '1rem', 
+                  textAlign: 'center',
+                  fontSize: currentRoom?.gameState?.currentPlayer === player?.id ? '1.3rem' : '1rem',
+                  textShadow: currentRoom?.gameState?.currentPlayer === player?.id ? '0 0 10px #00d4ff' : 'none',
+                  transition: 'all 0.3s ease'
+                }}>
+                  Your Hand ({player?.cards?.length || 0} cards)
+                  {currentRoom?.gameState?.currentPlayer === player?.id && (
+                    <span style={{ display: 'block', fontSize: '0.9rem', color: '#00d4ff', marginTop: '0.5rem' }}>
+                      🎯 YOUR TURN
+                    </span>
+                  )}
                 </h4>
-                <CardHand
-                  cards={player?.cards || []}
-                  size="large"
-                  interactive={true}
-                  playableCards={[]} // Will be calculated based on game rules
+                <div style={{
+                  transform: currentRoom?.gameState?.currentPlayer === player?.id ? 'scale(1.4)' : 'scale(1)',
+                  transition: 'transform 0.3s ease',
+                  filter: currentRoom?.gameState?.currentPlayer === player?.id ? 'drop-shadow(0 0 15px rgba(0, 212, 255, 0.5))' : 'none'
+                }}>
+                  <CardHand
+                    cards={player?.cards || []}
+                    size="large"
+                    interactive={currentRoom?.gameState?.currentPlayer === player?.id}
+                    playableCards={player?.cards || []} // For now, all cards are playable
+                  onCardClick={(card) => {
+                    if (currentRoom?.gameState?.currentPlayer === player?.id) {
+                      console.log('🃏 Card clicked:', card);
+                      console.log('🃏 Card structure:', JSON.stringify(card, null, 2));
+                      
+                      // Always use the card's unique ID - cards should have IDs from server
+                      if (card && card.id) {
+                        console.log('✅ Playing card with ID:', card.id);
+                        
+                        // Special handling for Queen - needs suit selection (unless two-player endgame)
+                        if (card.rank === 'Q') {
+                          // Check if this is two-player endgame (only 2 players left without finish order)
+                          const remainingPlayers = currentRoom?.players?.filter(p => !p.stormFinishOrder) || [];
+                          const isLastCard = player?.cards?.length === 1;
+                          const isTwoPlayerEndgame = remainingPlayers.length === 2 && isLastCard;
+                          
+                          if (isTwoPlayerEndgame) {
+                            console.log('👸 Two-player endgame: Queen can be played without suit selection');
+                            playCard(card.id); // No suit selection needed
+                          } else {
+                            console.log('👸 Queen selected - showing suit selection');
+                            setSelectedQueenCard(card);
+                            setQueenSelectingPlayer(player?.id);
+                          }
+                        } else {
+                          // Normal card play
+                          playCard(card.id);
+                        }
+                      } else {
+                        console.log('❌ Card missing ID or invalid card object:', card);
+                        console.log('❌ Player cards:', player?.cards);
+                        // This shouldn't happen if server is working correctly
+                        alert('Card is missing ID - this is a bug. Please refresh.');
+                      }
+                    } else {
+                      console.log('❌ Not your turn, current player:', currentRoom?.gameState?.currentPlayer);
+                      console.log('❌ Your player ID:', player?.id);
+                    }
+                  }}
                 />
+                </div>
               </PlayerHandArea>
             </GamePlayArea>
           </StormContainer>
         );
 
       case 'lane-selection':
+        const currentActivePlayer = currentRoom?.players?.find(p => p.isActive);
+        const isMyTurn = currentActivePlayer?.id === player?.id;
+        
         return (
           <LaneSelectionContainer>
             <StageTitle>Lane Selection</StageTitle>
             <StageDescription>
-              Choose your starting lane for the race. Lane 1 starts first but is most crowded.
+              Choose your starting lane for the race. Lane 1 (inside) is shortest but most crowded.
+              {isMyTurn ? " Your turn to select!" : ` Waiting for ${currentActivePlayer?.name || 'player'} to select...`}
             </StageDescription>
             
             <LaneGrid>
-              {[1, 2, 3, 4].map(lane => (
-                <LaneOption
-                  key={lane}
-                  selected={selectedLane === lane}
-                  onClick={() => setSelectedLane(lane)}
-                >
-                  <LaneNumber>{lane}</LaneNumber>
-                  <LaneDescription>
-                    {lane === 1 && "Inside lane - Shortest distance"}
-                    {lane === 2 && "Second lane - Good balance"}
-                    {lane === 3 && "Third lane - Less congestion"}
-                    {lane === 4 && "Outside lane - Most room"}
-                  </LaneDescription>
-                </LaneOption>
-              ))}
+              {[1, 2, 3, 4].map(lane => {
+                const laneOccupied = currentRoom?.players?.some(p => p.lane === lane);
+                return (
+                  <LaneOption
+                    key={lane}
+                    selected={selectedLane === lane}
+                    onClick={() => {
+                      if (!isMyTurn || laneOccupied) return;
+                      setSelectedLane(lane);
+                      // Emit lane selection to server
+                      if (socket) {
+                        socket.emit('select-lane', { lane });
+                      }
+                    }}
+                    style={{
+                      opacity: laneOccupied ? 0.5 : 1,
+                      cursor: (!isMyTurn || laneOccupied) ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <LaneNumber>{lane}</LaneNumber>
+                    <LaneDescription>
+                      {lane === 1 && "Inside lane - Shortest distance"}
+                      {lane === 2 && "Second lane - Good balance"}
+                      {lane === 3 && "Third lane - Less congestion"}
+                      {lane === 4 && "Outside lane - Most room"}
+                      {laneOccupied && <div style={{ color: '#ff4444', fontWeight: 'bold', marginTop: '0.5rem' }}>TAKEN</div>}
+                    </LaneDescription>
+                  </LaneOption>
+                );
+              })}
             </LaneGrid>
             
-            {selectedLane && (
-              <ActionButton>
-                Confirm Lane {selectedLane}
-              </ActionButton>
+            {!isMyTurn && (
+              <div style={{ textAlign: 'center', color: '#00d4ff', fontSize: '1.1rem', marginTop: '2rem' }}>
+                🕒 Waiting for {currentActivePlayer?.name || 'player'} to select their lane...
+              </div>
             )}
           </LaneSelectionContainer>
         );
@@ -966,7 +1378,7 @@ function GameBoard() {
   return (
     <GameContainer>
       <EnhancedPlayerCardHeader 
-        players={players}
+        players={playersWithCardCount}
         currentPlayer={currentRoom?.gameState?.currentPlayer}
         gameStage={currentStage}
       />
@@ -974,6 +1386,98 @@ function GameBoard() {
       <StageContainer>
         {renderStage()}
       </StageContainer>
+
+      {/* GameDevGuide: Cards animate into hand area, one at a time, 0.3s per card */}
+      {cardDealingAnimation && (
+        <CardDealingOverlay>
+          {/* Simple animated card moving to player's hand */}
+          <div style={{
+            position: 'absolute',
+            top: '45%',
+            left: '25%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1002
+          }}>
+            <PlayingCard 
+              isBack={true} 
+              size="small"
+              style={{
+                animation: 'cardToHand 0.3s ease-out forwards',
+                boxShadow: '0 4px 12px rgba(255, 215, 0, 0.6)'
+              }}
+            />
+          </div>
+          
+          <div style={{
+            position: 'absolute',
+            bottom: '20%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            color: '#ffd700',
+            fontSize: '18px',
+            fontWeight: 'bold',
+            textAlign: 'center',
+            textShadow: '0 2px 4px rgba(0, 0, 0, 0.8)',
+            background: 'rgba(0, 0, 0, 0.7)',
+            padding: '15px 30px',
+            borderRadius: '10px',
+            border: '2px solid #ffd700'
+          }}>
+            Dealing to {cardDealingAnimation.playerName}
+            <div style={{ fontSize: '14px', marginTop: '5px', opacity: 0.9 }}>
+              Card {cardDealingAnimation.cardIndex + 1} of {cardDealingAnimation.totalCards}
+            </div>
+          </div>
+        </CardDealingOverlay>
+      )}
+
+      {/* Global Discard Card Dealing Animation */}
+      {discardCardDealt && (
+        <CardDealingOverlay>
+          <DealingMessage>
+            <strong>Turning over first card for discard pile...</strong>
+            <br />
+            <PlayingCard
+              rank={discardCardDealt.card.rank}
+              suit={discardCardDealt.card.suit}
+              size="large"
+              style={{ marginTop: '1rem' }}
+            />
+          </DealingMessage>
+        </CardDealingOverlay>
+      )}
+
+      {/* Storm Results Overlay */}
+      {stormResults && (
+        <StormResultsOverlay>
+          <StormResultsModal>
+            <h2>🏆 Storm Stage Complete!</h2>
+            <ResultsList>
+              {stormResults.map((result, index) => (
+                <ResultItem key={result.playerId} $position={result.finishOrder}>
+                  <div className="position">#{result.finishOrder}</div>
+                  <div className="player-name">{result.playerName}</div>
+                  <div className="card-count">
+                    {result.cardCount > 0 ? `${result.cardCount} cards left` : 'Finished!'}
+                  </div>
+                </ResultItem>
+              ))}
+            </ResultsList>
+            
+            {isHost && (
+              <ContinueButton onClick={continueToNextStage}>
+                Continue to {currentRoom?.gameState?.stormRound === 1 ? 'Lane Selection' : 'Coin Stage'}
+              </ContinueButton>
+            )}
+            
+            {!isHost && (
+              <WaitingMessage>
+                Waiting for host to continue...
+              </WaitingMessage>
+            )}
+          </StormResultsModal>
+        </StormResultsOverlay>
+      )}
     </GameContainer>
   );
 }

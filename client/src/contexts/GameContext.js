@@ -26,6 +26,7 @@ const initialState = {
   
   // Game state
   gameState: null,
+  stormResults: null,
   
   // Animation state
   cardDealingAnimation: null,
@@ -69,11 +70,15 @@ function gameReducer(state, action) {
       };
       
     case 'UPDATE_ROOM_WITH_PLAYER_DATA':
-      const { myPlayerData, ...roomData } = action.payload;
+      // Handle data where myPlayerData is nested in the room object
+      const roomPayload = action.payload;
+      const playerData = roomPayload.myPlayerData;
+      const { myPlayerData, ...roomWithoutPlayerData } = roomPayload;
+      
       return { 
         ...state, 
-        currentRoom: state.currentRoom ? { ...state.currentRoom, ...roomData } : null,
-        player: myPlayerData ? { ...state.player, ...myPlayerData } : state.player
+        currentRoom: state.currentRoom ? { ...state.currentRoom, ...roomWithoutPlayerData } : null,
+        player: playerData ? { ...state.player, ...playerData } : state.player
       };
       
     case 'CARD_DEALT_ANIMATION':
@@ -106,6 +111,13 @@ function gameReducer(state, action) {
       
     case 'SET_GAME_STATE':
       return { ...state, gameState: action.payload };
+      
+    case 'STORM_STAGE_COMPLETE':
+      return { 
+        ...state, 
+        stormResults: action.payload.results,
+        currentRoom: state.currentRoom ? { ...state.currentRoom, ...action.payload.room } : null
+      };
       
     case 'RESET_GAME':
       return {
@@ -223,6 +235,47 @@ export function GameProvider({ children }) {
       dispatch({ type: 'DISCARD_CARD_DEALT', payload: data });
     });
 
+    socket.on('card-played', (data) => {
+      console.log('📥 Received card-played event:', data);
+      // Card was played successfully
+      dispatch({ type: 'UPDATE_ROOM_WITH_PLAYER_DATA', payload: data.room });
+    });
+
+    socket.on('cards-drawn', (data) => {
+      console.log('📥 Received cards-drawn event:', data);
+      // Cards were drawn successfully
+      dispatch({ type: 'UPDATE_ROOM_WITH_PLAYER_DATA', payload: data.room });
+    });
+
+    // Storm stage complete handler
+    socket.on('storm-stage-complete', (data) => {
+      console.log('🎯 Storm stage complete:', data);
+      dispatch({ type: 'STORM_STAGE_COMPLETE', payload: data });
+    });
+
+    // Individual player finished handler
+    socket.on('player-finished-storm', (data) => {
+      console.log('🏆 Player finished Storm:', data);
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
+    // Stage advanced handler
+    socket.on('stage-advanced', (data) => {
+      console.log('🎯 Stage advanced:', data);
+      dispatch({ type: 'UPDATE_ROOM_WITH_PLAYER_DATA', payload: data });
+    });
+
+    // Lane selection event handlers
+    socket.on('lane-selected', (data) => {
+      console.log('🏁 Lane selected:', data);
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
+    socket.on('lane-selection-complete', (data) => {
+      console.log('🏁 Lane selection complete:', data);
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
     // Error handler
     socket.on('error', (error) => {
       dispatch({ type: 'SET_ERROR', payload: error.message });
@@ -309,6 +362,30 @@ export function GameProvider({ children }) {
 
     setCurrentView: (view) => {
       dispatch({ type: 'SET_CURRENT_VIEW', payload: view });
+    },
+
+    // Storm stage actions
+    drawCards: () => {
+      console.log('🎲 Client: Attempting to draw cards');
+      if (state.socket) {
+        state.socket.emit('draw-cards', {});
+      }
+    },
+
+    playCard: (cardId, calledSuit = null) => {
+      console.log('🃏 Client: Attempting to play card:', cardId, calledSuit);
+      if (state.socket) {
+        state.socket.emit('play-card', { cardId, calledSuit });
+      }
+    },
+
+    continueToNextStage: () => {
+      console.log('🎯 Client: Continuing to next stage');
+      if (state.socket) {
+        state.socket.emit('continue-to-next-stage');
+        // Clear storm results
+        dispatch({ type: 'STORM_STAGE_COMPLETE', payload: { results: null } });
+      }
     }
   };
 

@@ -202,6 +202,7 @@ function isSpecialCard(rank) {
 const PlayingCard = ({ 
   rank, 
   suit, 
+  id,
   isBack = false, 
   size = 'medium', 
   interactive = false,
@@ -212,7 +213,7 @@ const PlayingCard = ({
 }) => {
   const handleClick = () => {
     if (interactive && onClick) {
-      onClick({ rank, suit });
+      onClick({ rank, suit, id });
     }
   };
 
@@ -265,7 +266,7 @@ const StackedCard = styled.div`
   z-index: ${props => 10 - props.index};
 `;
 
-export const CardStack = ({ cards, size = 'medium', maxVisible = 3 }) => {
+export const CardStack = ({ cards = [], size = 'medium', maxVisible = 3 }) => {
   const visibleCards = cards.slice(-maxVisible);
   
   return (
@@ -309,9 +310,10 @@ export const CardHand = ({
     <HandContainer size={size}>
       {cards.map((card, index) => (
         <PlayingCard
-          key={`${card.rank}-${card.suit}-${index}`}
+          key={card.id || `${card.rank}-${card.suit}-${index}`}
           rank={card.rank}
           suit={card.suit}
+          id={card.id}
           size={size}
           interactive={interactive}
           isPlayable={playableCards.some(pc => 

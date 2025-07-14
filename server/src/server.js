@@ -254,21 +254,15 @@ io.on('connection', (socket) => {
     const room = gameRooms.get(player.roomId);
     if (!room) return;
 
-    // Only host can update settings
-    if (room.host.id !== socket.id) {
-      socket.emit('error', { message: 'Only the host can update settings.' });
-      return;
-    }
-
-    // Update room settings
-    const success = room.updateSettings(newSettings);
+    // Pass the player's socket ID as hostId for validation
+    const success = room.updateSettings(newSettings, socket.id);
     if (success) {
       io.to(player.roomId).emit('room-updated', {
         room: room.toJSON()
       });
       console.log(`Settings updated in room: ${room.name}`);
     } else {
-      socket.emit('error', { message: 'Failed to update settings.' });
+      socket.emit('error', { message: 'Only the host can update settings, or invalid settings provided.' });
     }
   });
 
@@ -342,6 +336,54 @@ io.on('connection', (socket) => {
     console.log(`Storm stage started in room: ${room.name}`);
   });
 
+  // Handle continue to next stage after Storm results
+  socket.on('continue-to-next-stage', () => {
+    const player = playerSockets.get(socket.id);
+    if (!player || !player.roomId) return;
+
+    const room = gameRooms.get(player.roomId);
+    if (!room) return;
+
+    // Only host can continue
+    if (room.host.id !== socket.id) {
+      socket.emit('error', { message: 'Only the host can continue.' });
+      return;
+    }
+
+    // Must be in storm stage with storm complete
+    if (room.gameState.currentStage !== 'storm' || !room.gameState.stormComplete) {
+      socket.emit('error', { message: 'Storm stage not complete yet.' });
+      return;
+    }
+
+    console.log(`🎯 Host continuing to next stage after Storm results`);
+
+    // Reset storm complete flag
+    room.gameState.stormComplete = false;
+
+    // Advance to next stage
+    if (room.gameState.stormRound === 1) {
+      // First storm, go to lane selection
+      room.advanceToNextStage(); // lane-selection
+    } else {
+      // Subsequent storms, go to coin stage
+      room.gameState.currentStage = 'coin';
+      room.setupCoinStage();
+    }
+
+    // Send updated room data to all players
+    room.players.forEach(roomPlayer => {
+      const playerSocket = [...playerSockets.entries()].find(([socketId, data]) => data.id === roomPlayer.id);
+      if (playerSocket) {
+        io.to(playerSocket[0]).emit('stage-advanced', {
+          room: room.toDetailedJSON(roomPlayer.id)
+        });
+      }
+    });
+
+    console.log(`Advanced to ${room.gameState.currentStage} stage in room: ${room.name}`);
+  });
+
   // Handle dealer card selection
   socket.on('select-dealer-card', (data) => {
     const player = playerSockets.get(socket.id);
@@ -395,35 +437,48 @@ io.on('connection', (socket) => {
       return;
     }
 
+    console.log(`🎮 Received play-card event:`, data);
+    
     const result = room.playCard(socket.id, data.cardId, data.calledSuit);
     
+    console.log(`🎯 PlayCard result:`, result);
+    
     if (result.success) {
-      io.to(player.roomId).emit('card-played', {
-        playerId: socket.id,
-        card: result.card,
-        calledSuit: data.calledSuit,
-        room: room.toJSON()
+      // Send updated room data to each player with their personal data
+      room.players.forEach(roomPlayer => {
+        const playerSocket = [...playerSockets.entries()].find(([socketId, data]) => data.id === roomPlayer.id);
+        if (playerSocket) {
+          io.to(playerSocket[0]).emit('card-played', {
+            playerId: socket.id,
+            card: result.card,
+            calledSuit: data.calledSuit,
+            room: room.toDetailedJSON(roomPlayer.id)
+          });
+        }
       });
 
-      // Check if player finished Storm stage
-      const currentPlayer = room.getPlayer(socket.id);
-      if (currentPlayer && currentPlayer.hasFinishedStorm()) {
-        io.to(player.roomId).emit('player-finished-storm', {
-          playerId: socket.id,
-          finishOrder: currentPlayer.stormFinishOrder,
+      // Check if Storm stage is complete
+      if (result.stormComplete && result.showResults) {
+        console.log(`🎯 Storm stage complete! Sending results to all players.`);
+        io.to(player.roomId).emit('storm-stage-complete', {
+          results: room.players
+            .sort((a, b) => a.stormFinishOrder - b.stormFinishOrder)
+            .map(p => ({
+              playerId: p.id,
+              playerName: p.name,
+              finishOrder: p.stormFinishOrder,
+              cardCount: p.cards.length
+            })),
           room: room.toJSON()
         });
-      }
-
-      // Check if Storm stage is complete
-      const allFinished = room.players.every(p => p.stormFinishOrder !== null);
-      if (allFinished) {
-        io.to(player.roomId).emit('storm-stage-complete', {
-          results: room.players.map(p => ({
-            playerId: p.id,
-            playerName: p.name,
-            finishOrder: p.stormFinishOrder
-          })),
+      } else if (result.playerFinished) {
+        // A player finished but game continues - just update the badges
+        console.log(`🏆 Player finished but Storm continues`);
+        const finishedPlayer = room.getPlayer(socket.id);
+        io.to(player.roomId).emit('player-finished-storm', {
+          playerId: socket.id,
+          playerName: finishedPlayer.name,
+          finishOrder: finishedPlayer.stormFinishOrder,
           room: room.toJSON()
         });
       }
@@ -445,27 +500,31 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (!player.isActive) {
-      socket.emit('error', { message: 'Not your turn' });
+    console.log(`🎮 Received draw-cards event:`, data);
+
+    // Use GameRoom's drawCards method for proper handling
+    const result = room.drawCards(socket.id, data.count);
+    
+    console.log(`🎯 DrawCards result:`, result);
+    
+    if (!result.success) {
+      console.log(`❌ Draw cards failed: ${result.message}`);
+      socket.emit('error', { message: result.message });
       return;
     }
-
-    // Calculate cards to draw (for toxic sevens)
-    const cardsToDraw = data.count || (room.gameState.toxicSevenCount * 2) || 1;
-    const drawnCards = room.gameState.drawCards(cardsToDraw);
     
-    player.addCards(drawnCards);
+    console.log(`✅ Cards drawn successfully, sending updates to all players`);
     
-    // Reset toxic seven count
-    room.gameState.toxicSevenCount = 0;
-    
-    // Advance to next player
-    room.advanceToNextPlayer();
-    
-    io.to(player.roomId).emit('cards-drawn', {
-      playerId: socket.id,
-      cardCount: drawnCards.length,
-      room: room.toJSON()
+    // Send updated room data to each player with their personal data
+    room.players.forEach(roomPlayer => {
+      const playerSocket = [...playerSockets.entries()].find(([socketId, data]) => data.id === roomPlayer.id);
+      if (playerSocket) {
+        io.to(playerSocket[0]).emit('cards-drawn', {
+          playerId: socket.id,
+          cardCount: result.cardCount,
+          room: room.toDetailedJSON(roomPlayer.id)
+        });
+      }
     });
   });
 
@@ -641,9 +700,13 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3501;
-console.log('Starting Havoc Speedway server...');
-server.listen(PORT, () => {
-  console.log(`Havoc Speedway server running on port ${PORT}`);
-});
+
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  console.log('Starting Havoc Speedway server...');
+  server.listen(PORT, () => {
+    console.log(`Havoc Speedway server running on port ${PORT}`);
+  });
+}
 
 module.exports = { app, server, io };

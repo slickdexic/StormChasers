@@ -1,12 +1,17 @@
-const { app, server, io } = require('../src/server');
+const { app, io } = require('../server');
 const Client = require('socket.io-client');
 
 describe('Havoc Speedway Game Flow Tests', () => {
   let serverInstance;
   let clientSockets = [];
-  
+
   beforeAll((done) => {
-    serverInstance = server.listen(0, () => {
+    // Create a new server instance for testing that doesn't conflict
+    const http = require('http');
+    const testServer = http.createServer(app);
+    const testIo = require('socket.io')(testServer);
+    
+    serverInstance = testServer.listen(0, () => {
       const port = serverInstance.address().port;
       
       // Create 4 test clients
