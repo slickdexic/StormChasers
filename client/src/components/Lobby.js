@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { useGame } from '../contexts/GameContext';
 
@@ -210,6 +210,45 @@ const Input = styled.input`
   }
 `;
 
+const AutocompleteContainer = styled.div`
+  position: relative;
+  width: 100%;
+`;
+
+const AutocompleteList = styled.ul`
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+  z-index: 10;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+`;
+
+const AutocompleteItem = styled.li`
+  padding: 10px;
+  color: white;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(0, 212, 255, 0.2);
+  }
+
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+
 const Select = styled.select`
   padding: 10px;
   border: 2px solid rgba(255, 255, 255, 0.2);
@@ -268,10 +307,50 @@ function Lobby() {
     cardsPerHand: 4,
     numberOfCoins: 2
   });
+  
+  // Autocomplete states
+  const [previousRoomNames, setPreviousRoomNames] = useState([]);
+  const [showRoomAutocomplete, setShowRoomAutocomplete] = useState(false);
+  const roomInputRef = useRef(null);
+  const roomAutocompleteRef = useRef(null);
+
+  // Load previous room names from localStorage on component mount
+  useEffect(() => {
+    const saved = localStorage.getItem('havoc-speedway-room-names');
+    if (saved) {
+      try {
+        setPreviousRoomNames(JSON.parse(saved));
+      } catch (e) {
+        console.error('Error loading previous room names:', e);
+      }
+    }
+  }, []);
+
+  // Close autocomplete when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (roomAutocompleteRef.current && !roomAutocompleteRef.current.contains(event.target)) {
+        setShowRoomAutocomplete(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const saveRoomName = (name) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    const updatedNames = [trimmedName, ...previousRoomNames.filter(n => n !== trimmedName)].slice(0, 10);
+    setPreviousRoomNames(updatedNames);
+    localStorage.setItem('havoc-speedway-room-names', JSON.stringify(updatedNames));
+  };
 
   const handleCreateRoom = (e) => {
     e.preventDefault();
     if (formData.roomName.trim()) {
+      saveRoomName(formData.roomName);
       createRoom(formData.roomName.trim(), {
         numberOfLaps: parseInt(formData.numberOfLaps),
         numberOfDice: parseInt(formData.numberOfDice),
@@ -283,6 +362,28 @@ function Lobby() {
       setShowCreateForm(false);
     }
   };
+
+  const handleRoomNameChange = (e) => {
+    const value = e.target.value;
+    setFormData({...formData, roomName: value});
+    setShowRoomAutocomplete(value.length > 0 && previousRoomNames.length > 0);
+  };
+
+  const handleRoomNameFocus = () => {
+    if (previousRoomNames.length > 0) {
+      setShowRoomAutocomplete(true);
+    }
+  };
+
+  const selectRoomName = (name) => {
+    setFormData({...formData, roomName: name});
+    setShowRoomAutocomplete(false);
+    roomInputRef.current?.focus();
+  };
+
+  const filteredRoomNames = previousRoomNames.filter(name => 
+    name.toLowerCase().includes(formData.roomName.toLowerCase())
+  );
 
   const handleJoinRoom = (roomId) => {
     joinRoom(roomId);
@@ -341,14 +442,30 @@ function Lobby() {
             <CreateRoomForm onSubmit={handleCreateRoom}>
               <FormGroup>
                 <Label>Room Name</Label>
-                <Input
-                  type="text"
-                  value={formData.roomName}
-                  onChange={(e) => setFormData({...formData, roomName: e.target.value})}
-                  placeholder="Enter room name..."
-                  maxLength={30}
-                  required
-                />
+                <AutocompleteContainer ref={roomAutocompleteRef}>
+                  <Input
+                    ref={roomInputRef}
+                    type="text"
+                    value={formData.roomName}
+                    onChange={handleRoomNameChange}
+                    onFocus={handleRoomNameFocus}
+                    placeholder="Enter room name..."
+                    maxLength={30}
+                    required
+                  />
+                  {showRoomAutocomplete && filteredRoomNames.length > 0 && (
+                    <AutocompleteList>
+                      {filteredRoomNames.map((name, index) => (
+                        <AutocompleteItem
+                          key={index}
+                          onClick={() => selectRoomName(name)}
+                        >
+                          {name}
+                        </AutocompleteItem>
+                      ))}
+                    </AutocompleteList>
+                  )}
+                </AutocompleteContainer>
               </FormGroup>
 
               <FormGroup>

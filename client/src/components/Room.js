@@ -182,6 +182,43 @@ const SettingValue = styled.span`
   color: #00d4ff;
 `;
 
+const SettingSelect = styled.select`
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  color: #00d4ff;
+  padding: 5px 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  
+  &:focus {
+    outline: none;
+    border-color: #00d4ff;
+  }
+  
+  option {
+    background: #1a1a2e;
+    color: white;
+  }
+`;
+
+const SettingInput = styled.input`
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  color: #00d4ff;
+  padding: 5px 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  width: 60px;
+  text-align: center;
+  
+  &:focus {
+    outline: none;
+    border-color: #00d4ff;
+  }
+`;
+
 const StartButton = styled.button`
   width: 100%;
   padding: 15px;
@@ -348,7 +385,8 @@ function Room() {
     sendRoomMessage, 
     sendPrivateMessage,
     changeColor, 
-    startGame 
+    startGame,
+    updateSettings 
   } = useGame();
   
   const [chatMessage, setChatMessage] = useState('');
@@ -368,6 +406,14 @@ function Room() {
   };
 
   const availableColors = ['yellow', 'orange', 'red', 'pink', 'purple', 'blue', 'green', 'black'];
+
+  const handleSettingChange = (settingName, value) => {
+    const newSettings = {
+      ...currentRoom?.settings,
+      [settingName]: parseInt(value)
+    };
+    updateSettings(newSettings);
+  };
 
   const handleSendMessage = (e) => {
     e.preventDefault();
@@ -458,23 +504,78 @@ function Room() {
             <SettingsGrid>
               <SettingItem>
                 <SettingLabel>Laps:</SettingLabel>
-                <SettingValue>{currentRoom?.settings?.numberOfLaps || 3}</SettingValue>
+                {currentRoom?.host?.id === player?.id && currentRoom?.gameState?.currentStage === 'lobby' ? (
+                  <SettingSelect 
+                    value={currentRoom?.settings?.numberOfLaps || 3}
+                    onChange={(e) => handleSettingChange('numberOfLaps', e.target.value)}
+                  >
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                    <option value={4}>4</option>
+                    <option value={5}>5</option>
+                  </SettingSelect>
+                ) : (
+                  <SettingValue>{currentRoom?.settings?.numberOfLaps || 3}</SettingValue>
+                )}
               </SettingItem>
               <SettingItem>
                 <SettingLabel>Movement Dice:</SettingLabel>
-                <SettingValue>{currentRoom?.settings?.numberOfDice === 2 ? '2 dice' : '1 die'}</SettingValue>
+                {currentRoom?.host?.id === player?.id && currentRoom?.gameState?.currentStage === 'lobby' ? (
+                  <SettingSelect 
+                    value={currentRoom?.settings?.numberOfDice || 1}
+                    onChange={(e) => handleSettingChange('numberOfDice', e.target.value)}
+                  >
+                    <option value={1}>1 die</option>
+                    <option value={2}>2 dice</option>
+                  </SettingSelect>
+                ) : (
+                  <SettingValue>{currentRoom?.settings?.numberOfDice === 2 ? '2 dice' : '1 die'}</SettingValue>
+                )}
               </SettingItem>
               <SettingItem>
                 <SettingLabel>Card Decks:</SettingLabel>
-                <SettingValue>{currentRoom?.settings?.numberOfDecks === 2 ? 'Double' : 'Single'}</SettingValue>
+                {currentRoom?.host?.id === player?.id && currentRoom?.gameState?.currentStage === 'lobby' ? (
+                  <SettingSelect 
+                    value={currentRoom?.settings?.numberOfDecks || 1}
+                    onChange={(e) => handleSettingChange('numberOfDecks', e.target.value)}
+                  >
+                    <option value={1}>Single</option>
+                    <option value={2}>Double</option>
+                  </SettingSelect>
+                ) : (
+                  <SettingValue>{currentRoom?.settings?.numberOfDecks === 2 ? 'Double' : 'Single'}</SettingValue>
+                )}
               </SettingItem>
               <SettingItem>
                 <SettingLabel>Cards per Hand:</SettingLabel>
-                <SettingValue>{currentRoom?.settings?.cardsPerHand || 4}</SettingValue>
+                {currentRoom?.host?.id === player?.id && currentRoom?.gameState?.currentStage === 'lobby' ? (
+                  <SettingSelect 
+                    value={currentRoom?.settings?.cardsPerHand || 4}
+                    onChange={(e) => handleSettingChange('cardsPerHand', e.target.value)}
+                  >
+                    <option value={3}>3</option>
+                    <option value={4}>4</option>
+                    <option value={5}>5</option>
+                  </SettingSelect>
+                ) : (
+                  <SettingValue>{currentRoom?.settings?.cardsPerHand || 4}</SettingValue>
+                )}
               </SettingItem>
               <SettingItem>
                 <SettingLabel>Coins per Round:</SettingLabel>
-                <SettingValue>{currentRoom?.settings?.numberOfCoins || 2}</SettingValue>
+                {currentRoom?.host?.id === player?.id && currentRoom?.gameState?.currentStage === 'lobby' ? (
+                  <SettingSelect 
+                    value={currentRoom?.settings?.numberOfCoins || 2}
+                    onChange={(e) => handleSettingChange('numberOfCoins', e.target.value)}
+                  >
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                  </SettingSelect>
+                ) : (
+                  <SettingValue>{currentRoom?.settings?.numberOfCoins || 2}</SettingValue>
+                )}
               </SettingItem>
             </SettingsGrid>
           </GameSettings>

@@ -170,13 +170,11 @@ class GameRoom {
     // Create and shuffle deck
     this.gameState.createDeck(this.settings);
     
-    // Deal cards to players
+    // Deal cards to players (but don't add to player hands yet for animation)
     const hands = this.gameState.dealCardsToPlayers(this.players, this.settings.cardsPerHand);
     
-    // Assign cards to players
-    for (const player of this.players) {
-      player.addCards(hands.get(player.id) || []);
-    }
+    // Store dealt hands for animation
+    this.dealHands = hands;
     
     // Set dealer as active player (or first player after dealer)
     const dealerIndex = this.players.findIndex(p => p.dealerButton);
@@ -189,6 +187,120 @@ class GameRoom {
     } else {
       this.setActivePlayer(firstPlayerIndex);
     }
+  }
+
+  // Start animated card dealing
+  startAnimatedCardDealing(io, playerSockets) {
+    console.log('🎯 Starting animated card dealing...');
+    if (!this.dealHands) {
+      console.log('❌ No dealHands available');
+      return;
+    }
+    
+    const cardsPerHand = this.settings.cardsPerHand;
+    const dealerIndex = this.players.findIndex(p => p.dealerButton);
+    
+    console.log(`💳 Dealing ${cardsPerHand} cards per hand to ${this.players.length} players`);
+    
+    // Create dealing order: start with player after dealer, go clockwise
+    const dealingOrder = [];
+    for (let i = 0; i < this.players.length; i++) {
+      const playerIndex = (dealerIndex + 1 + i) % this.players.length;
+      dealingOrder.push(this.players[playerIndex]);
+    }
+    
+    let currentCard = 0;
+    
+    const dealNextCard = () => {
+      console.log(`🎯 Dealing round ${currentCard + 1}/${cardsPerHand}`);
+      if (currentCard >= cardsPerHand) {
+        // All cards dealt, now flip one card for discard pile
+        console.log('✅ All cards dealt, dealing discard card');
+        this.dealInitialDiscardCard(io, playerSockets);
+        return;
+      }
+      
+      // Deal one card to each player in order
+      dealingOrder.forEach((player, index) => {
+        setTimeout(() => {
+          const playerCards = this.dealHands.get(player.id) || [];
+          if (currentCard < playerCards.length) {
+            const card = playerCards[currentCard];
+            
+            console.log(`🎯 Dealing card ${currentCard + 1} to ${player.name}: ${card.rank} of ${card.suit}`);
+            
+            // Send card-dealt animation event to all players in the room
+            io.to(this.id).emit('card-dealt', {
+              playerId: player.id,
+              playerName: player.name,
+              cardIndex: currentCard,
+              totalCards: cardsPerHand,
+              card: { rank: 'back', suit: 'back' }, // Face down during dealing
+              dealingToPlayer: index + 1,
+              totalPlayers: this.players.length
+            });
+          }
+        }, index * 400); // Increased delay from 200ms to 400ms for better visibility
+      });
+      
+      currentCard++;
+      
+      // Schedule next round of dealing
+      setTimeout(() => dealNextCard(), this.players.length * 400 + 800); // Increased delays
+    };
+    
+    // Start the dealing animation
+    setTimeout(() => dealNextCard(), 1000); // Increased initial delay
+  }
+
+  // Deal initial discard card
+  dealInitialDiscardCard(io, playerSockets) {
+    console.log('🎯 Dealing initial discard card');
+    // Turn over one card to start the discard pile
+    const discardCard = this.gameState.deck.pop();
+    this.gameState.discardPile.push(discardCard);
+    
+    console.log(`🔄 Discard card: ${discardCard.rank} of ${discardCard.suit}`);
+    
+    // Send discard card dealt event
+    io.to(this.id).emit('discard-card-dealt', {
+      card: discardCard
+    });
+    
+    // Wait a moment then finalize dealing
+    setTimeout(() => {
+      console.log('✅ Finalizing dealing and starting storm');
+      this.finalizeDealingAndStartStorm(io, playerSockets);
+    }, 1500); // Increased delay to let players see the discard card
+  }
+
+  // Finalize dealing and start storm
+  finalizeDealingAndStartStorm(io, playerSockets) {
+    console.log('🎯 Finalizing dealing and starting storm stage');
+    
+    // Now actually assign cards to players
+    for (const player of this.players) {
+      const playerCards = this.dealHands.get(player.id) || [];
+      player.addCards(playerCards);
+      console.log(`✅ Added ${playerCards.length} cards to ${player.name}`);
+    }
+    
+    // Clear the temporary dealing hands
+    this.dealHands = null;
+    
+    console.log('🎯 Sending storm-started events to all players');
+    
+    // Send detailed room data to each player individually (includes their hand)
+    this.players.forEach(roomPlayer => {
+      const playerSocket = [...playerSockets.entries()].find(([socketId, data]) => data.id === roomPlayer.id);
+      if (playerSocket) {
+        io.to(playerSocket[0]).emit('storm-started', {
+          room: this.toDetailedJSON(roomPlayer.id)
+        });
+      }
+    });
+    
+    console.log('✅ Storm stage fully initialized');
   }
 
   // Setup Lane Selection stage
@@ -302,15 +414,20 @@ class GameRoom {
       // Clear dealer selection, set dealer button
       const dealer = this.getPlayer(result.dealerPlayerId);
       dealer.setDealerButton(true);
-      this.gameState.dealerIndex = this.players.findIndex(p => p.id === result.dealerPlayerId);
+      const dealerIndex = this.players.findIndex(p => p.id === result.dealerPlayerId);
+      this.gameState.dealerIndex = dealerIndex;
       
-      // Advance to Storm stage
-      this.advanceToNextStage();
+      // Set player after dealer as current player for the first storm (clockwise)
+      const nextPlayerIndex = (dealerIndex + 1) % this.players.length;
+      this.gameState.currentPlayerIndex = nextPlayerIndex;
+      
+      // DON'T advance to Storm stage yet - wait for host to continue
+      // this.advanceToNextStage(); -- REMOVED
       
       return { 
         success: true, 
         dealer: dealer.toJSON(),
-        nextStage: 'storm'
+        showResults: true  // Flag to show results screen
       };
     } else {
       // Handle tie - reset tied players and continue
@@ -423,12 +540,19 @@ class GameRoom {
 
   // JSON representation for clients
   toJSON() {
+    const gameState = this.gameState.toJSON();
+    
+    // Add current player ID to game state
+    if (gameState.currentPlayerIndex >= 0 && gameState.currentPlayerIndex < this.players.length) {
+      gameState.currentPlayer = this.players[gameState.currentPlayerIndex].id;
+    }
+    
     return {
       id: this.id,
       name: this.name,
       host: this.host.toJSON(),
       players: this.players.map(p => p.toJSON()),
-      gameState: this.gameState.toJSON(),
+      gameState: gameState,
       settings: this.settings,
       status: this.getStatus(),
       createdAt: this.createdAt.toISOString()

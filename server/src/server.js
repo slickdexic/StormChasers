@@ -246,6 +246,32 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Handle game settings update
+  socket.on('update-settings', (newSettings) => {
+    const player = playerSockets.get(socket.id);
+    if (!player || !player.roomId) return;
+
+    const room = gameRooms.get(player.roomId);
+    if (!room) return;
+
+    // Only host can update settings
+    if (room.host.id !== socket.id) {
+      socket.emit('error', { message: 'Only the host can update settings.' });
+      return;
+    }
+
+    // Update room settings
+    const success = room.updateSettings(newSettings);
+    if (success) {
+      io.to(player.roomId).emit('room-updated', {
+        room: room.toJSON()
+      });
+      console.log(`Settings updated in room: ${room.name}`);
+    } else {
+      socket.emit('error', { message: 'Failed to update settings.' });
+    }
+  });
+
   // Handle game start
   socket.on('start-game', () => {
     const player = playerSockets.get(socket.id);
@@ -275,6 +301,45 @@ io.on('connection', (socket) => {
     broadcastRoomList();
     
     console.log(`Game started in room: ${room.name}`);
+  });
+
+  // Handle continue to storm (after dealer selection)
+  socket.on('continue-to-storm', () => {
+    const player = playerSockets.get(socket.id);
+    if (!player || !player.roomId) return;
+
+    const room = gameRooms.get(player.roomId);
+    if (!room) return;
+
+    // Only host can continue
+    if (room.host.id !== socket.id) {
+      socket.emit('error', { message: 'Only the host can continue.' });
+      return;
+    }
+
+    // Must be in dealer-selection stage with dealer determined, OR already in storm stage
+    if (room.gameState.currentStage !== 'dealer-selection' && room.gameState.currentStage !== 'storm') {
+      socket.emit('error', { message: 'Not in correct stage for storm continuation.' });
+      return;
+    }
+
+    const dealerExists = room.players.some(p => p.dealerButton);
+    if (!dealerExists) {
+      socket.emit('error', { message: 'Dealer not yet determined.' });
+      return;
+    }
+    
+    // Only advance if not already in storm stage
+    if (room.gameState.currentStage === 'dealer-selection') {
+      room.advanceToNextStage();
+      
+      // Start animated card dealing after stage setup
+      setTimeout(() => {
+        room.startAnimatedCardDealing(io, playerSockets);
+      }, 500); // Small delay for better UX
+    }
+
+    console.log(`Storm stage started in room: ${room.name}`);
   });
 
   // Handle dealer card selection
@@ -576,6 +641,7 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3501;
+console.log('Starting Havoc Speedway server...');
 server.listen(PORT, () => {
   console.log(`Havoc Speedway server running on port ${PORT}`);
 });

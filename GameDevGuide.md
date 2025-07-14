@@ -3,14 +3,28 @@
 **Game Design Reference Document - Version 7.0**
 
 ## Table of Contents
-1. [Storm Rules (Card Game)](#storm-rules)
-2. [Game Flow Overview](#game-flow-overview)
-3. [Detailed Stage Descriptions](#detailed-stage-descriptions)
-4. [Racing Mechanics](#racing-mechanics)
-5. [User Interface Design](#user-interface-design)
-6. [Game Lobby and Setup](#game-lobby-and-setup)
-7. [Track Layout and Position System](#track-layout-and-position-system)
-8. [Animation and Timing Specifications](#animation-and-timing-specifications)
+1. [Technical Requirements](#technical-requirements)
+2. [Storm Rules (Card Game)](#storm-rules)
+3. [Game Flow Overview](#game-flow-overview)
+4. [Detailed Stage Descriptions](#detailed-stage-descriptions)
+5. [Racing Mechanics](#racing-mechanics)
+6. [User Interface Design](#user-interface-design)
+7. [Game Lobby and Setup](#game-lobby-and-setup)
+8. [Track Layout and Position System](#track-layout-and-position-system)
+9. [Animation and Timing Specifications](#animation-and-timing-specifications)
+
+---
+
+## Technical Requirements
+
+### Port Configuration - CRITICAL REQUIREMENT
+- **ALL application ports MUST be 3500 or higher - NO EXCEPTIONS**
+- **Client**: Port 3500 (MANDATORY)
+- **Server**: Port 3501 (MANDATORY) 
+- **NEVER use ports 3000-3499** - These are FORBIDDEN to avoid conflicts
+- **If any process tries to use port 3000, 3001, 3002, etc., it MUST be stopped immediately**
+- This ensures compatibility with existing development environments and prevents port conflicts
+- **Any deviation from this rule breaks the entire application**
 
 ---
 

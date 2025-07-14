@@ -25,7 +25,11 @@ const initialState = {
   messages: [],
   
   // Game state
-  gameState: null
+  gameState: null,
+  
+  // Animation state
+  cardDealingAnimation: null,
+  discardCardDealt: null
 };
 
 function gameReducer(state, action) {
@@ -62,6 +66,33 @@ function gameReducer(state, action) {
       return { 
         ...state, 
         currentRoom: state.currentRoom ? { ...state.currentRoom, ...action.payload } : null 
+      };
+      
+    case 'UPDATE_ROOM_WITH_PLAYER_DATA':
+      const { myPlayerData, ...roomData } = action.payload;
+      return { 
+        ...state, 
+        currentRoom: state.currentRoom ? { ...state.currentRoom, ...roomData } : null,
+        player: myPlayerData ? { ...state.player, ...myPlayerData } : state.player
+      };
+      
+    case 'CARD_DEALT_ANIMATION':
+      return {
+        ...state,
+        cardDealingAnimation: action.payload
+      };
+      
+    case 'DISCARD_CARD_DEALT':
+      return {
+        ...state,
+        discardCardDealt: action.payload
+      };
+      
+    case 'CLEAR_ANIMATIONS':
+      return {
+        ...state,
+        cardDealingAnimation: null,
+        discardCardDealt: null
       };
       
     case 'ADD_MESSAGE':
@@ -137,6 +168,10 @@ export function GameProvider({ children }) {
       dispatch({ type: 'SET_LOADING', payload: false });
     });
 
+    socket.on('room-updated', (data) => {
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
     socket.on('player-joined', (data) => {
       dispatch({ type: 'UPDATE_ROOM', payload: data.room });
     });
@@ -158,6 +193,34 @@ export function GameProvider({ children }) {
     socket.on('game-started', (data) => {
       dispatch({ type: 'UPDATE_ROOM', payload: data.room });
       dispatch({ type: 'SET_CURRENT_VIEW', payload: 'game' });
+    });
+
+    // Dealer selection event handlers
+    socket.on('dealer-card-selected', (data) => {
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
+    socket.on('dealer-determined', (data) => {
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+      // Could add a notification about who became the dealer
+    });
+
+    socket.on('storm-started', (data) => {
+      dispatch({ type: 'UPDATE_ROOM_WITH_PLAYER_DATA', payload: data.room });
+      // Clear the discard card dealing animation after a delay
+      setTimeout(() => {
+        dispatch({ type: 'CLEAR_ANIMATIONS' });
+      }, 2000); // 2 second delay to let players see the final state
+    });
+
+    socket.on('card-dealt', (data) => {
+      // This event is for animation purposes
+      dispatch({ type: 'CARD_DEALT_ANIMATION', payload: data });
+    });
+
+    socket.on('discard-card-dealt', (data) => {
+      // This event shows the initial discard card being dealt
+      dispatch({ type: 'DISCARD_CARD_DEALT', payload: data });
     });
 
     // Error handler
@@ -225,6 +288,18 @@ export function GameProvider({ children }) {
     startGame: () => {
       if (state.socket) {
         state.socket.emit('start-game');
+      }
+    },
+
+    selectDealerCard: (cardIndex) => {
+      if (state.socket) {
+        state.socket.emit('select-dealer-card', { cardIndex });
+      }
+    },
+
+    updateSettings: (newSettings) => {
+      if (state.socket) {
+        state.socket.emit('update-settings', newSettings);
       }
     },
 
