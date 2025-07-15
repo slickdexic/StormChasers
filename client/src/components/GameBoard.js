@@ -1341,7 +1341,7 @@ function GameBoard() {
           </LaneSelectionContainer>
         );
 
-      case 'coin-stage':
+      case 'coin':
         return (
           <CoinStageContainer>
             <StageTitle>🪙 Coin Placement Stage</StageTitle>

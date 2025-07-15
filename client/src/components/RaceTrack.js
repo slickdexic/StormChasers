@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import styled, { keyframes, css } from 'styled-components';
+import Track from './track/Track';
+import useTrackData from '../hooks/useTrackData';
 
 const raceAnimation = keyframes`
   0% { transform: translateX(-2px) translateY(-1px); }
@@ -57,133 +59,39 @@ const TrackViewport = styled.div`
   transform: ${props => `translate(${props.panX}px, ${props.panY}px) scale(${props.zoom})`};
 `;
 
-const TrackSVG = styled.svg`
-  width: 1000px;
-  height: 800px;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  overflow: visible;
+const PlayerPawnGroup = styled.g`
+  transition: transform 0.5s ease-in-out;
+  ${props => props.isRacing && css`
+    animation: ${raceAnimation} 1s ease-in-out infinite;
+  `}
 `;
 
-const TrackBase = styled.ellipse`
-  fill: #1a1a2e;
-  stroke: rgba(0, 212, 255, 0.2);
-  stroke-width: 2;
-`;
-
-const TrackSurface = styled.ellipse`
-  fill: none;
-  stroke: #2a2a3e;
-  stroke-width: ${props => props.width || 80};
-`;
-
-const LaneMarker = styled.ellipse`
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.15);
-  stroke-width: 1;
-  stroke-dasharray: 8, 8;
-`;
-
-const StartFinishLine = styled.rect`
-  fill: url(#startFinishGradient);
-  stroke: white;
-  stroke-width: 1;
-`;
-
-const PitArea = styled.rect`
-  fill: rgba(255, 165, 0, 0.15);
-  stroke: #ffa500;
-  stroke-width: 1;
-  rx: 3;
-  ${css`animation: ${pitStopGlow} 4s ease-in-out infinite;`}
-`;
-
-const PitLane = styled.rect`
-  fill: rgba(255, 165, 0, 0.1);
-  stroke: rgba(255, 165, 0, 0.5);
-  stroke-width: 1;
-  stroke-dasharray: 4, 4;
-  rx: 2;
-`;
-
-const PositionSpot = styled.circle`
-  fill: ${props => props.highlighted ? 'rgba(255, 215, 0, 0.3)' : 'rgba(255, 255, 255, 0.1)'};
-  stroke: ${props => props.highlighted ? '#ffd700' : 'rgba(255, 255, 255, 0.3)'};
-  stroke-width: ${props => props.highlighted ? 2 : 1};
-  cursor: ${props => props.selectable ? 'pointer' : 'default'};
+const PlayerPawnCircle = styled.circle`
+  stroke-width: 0.2;
+  stroke: #fff;
   transition: all 0.3s ease;
-  
-  ${props => props.highlighted && css`
-    animation: ${polePositionGlow} 2s ease-in-out infinite;
-  `}
-  
-  &:hover {
-    fill: ${props => props.selectable ? 'rgba(255, 215, 0, 0.5)' : props.highlighted ? 'rgba(255, 215, 0, 0.3)' : 'rgba(255, 255, 255, 0.1)'};
-    stroke-width: ${props => props.selectable ? 3 : props.highlighted ? 2 : 1};
-  }
-`;
-
-const PlayerPawn = styled.div`
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, ${props => props.color || '#00d4ff'}, ${props => props.color || '#00d4ff'}cc);
-  border: 2px solid white;
-  box-shadow: 
-    0 3px 8px rgba(0, 0, 0, 0.4),
-    0 0 0 1px ${props => props.color || '#00d4ff'},
-    0 0 15px ${props => props.color || '#00d4ff'}60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Rajdhani', sans-serif;
-  font-weight: bold;
-  font-size: 11px;
-  color: ${props => {
-    const lightColors = ['#ffd700', '#ff8c00', '#ff69b4'];
-    return lightColors.includes(props.color) ? '#000' : '#fff';
-  }};
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 100;
-  transform-origin: center center;
-  
-  ${props => props.isMoving && css`
-    animation: ${raceAnimation} 0.4s ease-in-out;
-  `}
-  
-  ${props => props.isActive && css`
-    transform: scale(1.2);
-    box-shadow: 
-      0 5px 15px rgba(0, 0, 0, 0.5),
-      0 0 0 2px ${props.color || '#00d4ff'},
-      0 0 25px ${props.color || '#00d4ff'}80;
+  paint-order: stroke;
+  stroke-linejoin: round;
+  ${props => props.isCurrentPlayer && css`
+    stroke: #ffc107;
+    stroke-width: 0.3;
   `}
 `;
 
-const CoinMarker = styled.div`
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: ${props => props.faceUp ? 'linear-gradient(135deg, #ffd700, #ffed4e)' : 'linear-gradient(135deg, #8b4513, #a0522d)'};
-  border: 1px solid ${props => props.faceUp ? '#e6c200' : '#654321'};
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
-  font-size: 8px;
-  color: ${props => props.faceUp ? '#8b4513' : '#fff'};
-  display: flex;
-  align-items: center;
-  justify-content: center;
+const PlayerPawnText = styled.text`
+  font-size: 0.6px;
+  fill: #fff;
   font-weight: bold;
-  z-index: 50;
-  transition: all 0.2s ease;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+`;
+
+const CoinMarkerGroup = styled.g`
   cursor: pointer;
-  
+  transition: transform 0.2s ease;
   &:hover {
     transform: scale(1.2);
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
   }
 `;
 
@@ -246,17 +154,16 @@ const InfoPanel = styled.div`
 `;
 
 const RaceTrack = ({ 
-  players = [],
-  currentLap = 1,
-  totalLaps = 3,
-  playerPositions = {},
-  placedCoins = {},
-  activePlayerId = null,
-  stage = 'racing', // 'lane-selection', 'coin', 'racing'
-  onLaneSelect = null,
-  onCoinPlace = null,
-  panZoomEnabled = true,
+  players, 
+  trackPositions, 
+  placedCoins, 
+  activePlayerId, 
+  stage, 
+  onLaneSelect,
+  onCoinPlacement,
   focusOnPolePosition = false,
+  showControls = true,
+  showInfo = true,
   showPositionNumbers = false
 }) => {
   const [panX, setPanX] = useState(0);
@@ -267,99 +174,60 @@ const RaceTrack = ({
   const [animating, setAnimating] = useState(false);
   
   const containerRef = useRef();
-  
+  const { lanes, pitLane, pitStops, loading, error } = useTrackData();
+
   const playerColors = {
-    yellow: '#ffd700',
-    orange: '#ff8c00',
-    red: '#ff3838',
-    pink: '#ff69b4',
+    red: '#e74c3c',
+    blue: '#3498db',
+    green: '#2ecc71',
+    yellow: '#f1c40f',
     purple: '#9b59b6',
-    blue: '#00d4ff',
-    green: '#00ff88',
+    orange: '#e67e22',
     black: '#2c3e50'
   };
 
-  // Track layout based on GameDevGuide specifications
-  const getPositionCoordinates = useCallback((position, lane = 1) => {
-    // Track center
-    const centerX = 500;
-    const centerY = 400;
-    
-    // Lane radii based on GameDevGuide
-    const laneRadii = {
-      1: 200, // Inside lane
-      2: 220, // Lane 2  
-      3: 240, // Lane 3
-      4: 260  // Outside lane
-    };
-    
-    // Convert position (1-96) to angle
-    const positionAngle = ((position - 1) / 96) * 2 * Math.PI;
-    
-    // Adjust for counterclockwise racing direction
-    const angle = -positionAngle + Math.PI / 2;
-    
-    const radius = laneRadii[lane] || laneRadii[1];
-    const radiusX = radius;
-    const radiusY = radius * 0.6; // Oval shape
-    
-    return {
-      x: centerX + radiusX * Math.cos(angle),
-      y: centerY + radiusY * Math.sin(angle)
-    };
-  }, []);
+  const getPositionCoordinates = useCallback((position, lane) => {
+    if (loading || error) return { x: 0, y: 0 };
 
-  // Get coordinates for pit and pit-lane positions
-  const getPitCoordinates = (position, inPitLane = false) => {
-    if (inPitLane) {
-      // Pit-lane positions 1-5
-      return {
-        x: 750 + (position - 1) * 8,
-        y: 380 + position * 15
-      };
-    } else {
-      // Pit positions 1-4
-      return {
-        x: 700,
-        y: 380 + position * 20
-      };
-    }
-  };
+    const targetLane = lanes[lane] || [];
+    const spot = targetLane.find(s => s.id === String(position));
+    return spot ? { x: spot.x, y: spot.y } : { x: 0, y: 0 };
+  }, [lanes, loading, error]);
+
+  const getPitCoordinates = useCallback((positionId) => {
+    if (loading || error) return { x: 0, y: 0 };
+    
+    const spot = pitStops.find(s => s.id === positionId);
+    return spot ? { x: spot.x, y: spot.y } : { x: 0, y: 0 };
+  }, [pitStops, loading, error]);
+
 
   // Focus on pole position (position 96) for lane selection
   useEffect(() => {
-    if (focusOnPolePosition && stage === 'lane-selection') {
-      const poleCoords = getPositionCoordinates(96, 1);
-      const containerRect = containerRef.current?.getBoundingClientRect();
+    if (stage === 'lane-selection' && focusOnPolePosition && !loading) {
+      const polePositionCoords = getPositionCoordinates(96, 1);
+      if (polePositionCoords.x === 0 && polePositionCoords.y === 0) return;
+
+      const containerWidth = containerRef.current.offsetWidth;
+      const containerHeight = containerRef.current.offsetHeight;
       
-      if (containerRect) {
-        setAnimating(true);
-        setPanX(containerRect.width / 2 - poleCoords.x);
-        setPanY(containerRect.height / 2 - poleCoords.y);
-        setZoom(2);
-        
-        setTimeout(() => setAnimating(false), 1000);
-      }
-    } else if (!focusOnPolePosition) {
-      // Reset view
       setAnimating(true);
-      setPanX(0);
-      setPanY(0);
-      setZoom(1);
-      
+      setZoom(2.5);
+      setPanX(-polePositionCoords.x * 2.5 + containerWidth / 2);
+      setPanY(-polePositionCoords.y * 2.5 + containerHeight / 2);
       setTimeout(() => setAnimating(false), 1000);
     }
-  }, [focusOnPolePosition, stage, getPositionCoordinates]);
+  }, [focusOnPolePosition, stage, getPositionCoordinates, loading]);
 
   // Pan and zoom handlers
   const handleMouseDown = (e) => {
-    if (!panZoomEnabled) return;
+    if (!panEnabled) return;
     setIsPanning(true);
     setLastMousePos({ x: e.clientX, y: e.clientY });
   };
 
   const handleMouseMove = (e) => {
-    if (!isPanning || !panZoomEnabled) return;
+    if (!isPanning || !panEnabled) return;
     
     const deltaX = e.clientX - lastMousePos.x;
     const deltaY = e.clientY - lastMousePos.y;
@@ -374,14 +242,23 @@ const RaceTrack = ({
   };
 
   const handleWheel = (e) => {
-    if (!panZoomEnabled) return;
+    if (!panEnabled) return;
     e.preventDefault();
+    const newZoom = Math.max(0.5, Math.min(zoom - e.deltaY * 0.001, 5));
     
-    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(prev => Math.max(0.5, Math.min(3, prev * zoomFactor)));
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - containerRect.left;
+    const mouseY = e.clientY - containerRect.top;
+
+    const worldX = (mouseX - panX) / zoom;
+    const worldY = (mouseY - panY) / zoom;
+
+    setPanX(mouseX - worldX * newZoom);
+    setPanY(mouseY - worldY * newZoom);
+    setZoom(newZoom);
   };
 
-  const resetView = () => {
+  const handleResetView = () => {
     setAnimating(true);
     setPanX(0);
     setPanY(0);
@@ -398,10 +275,24 @@ const RaceTrack = ({
       .slice(0, 2);
   };
 
+  const handleSpotClick = (spot) => {
+    if (stage === 'lane-selection' && onLaneSelect) {
+      // For lane selection, we care about the starting spots (96)
+      if (spot.id === '96') {
+        onLaneSelect(spot.lane);
+      }
+    }
+    if (stage === 'coin-placement' && onCoinPlacement) {
+      onCoinPlacement({ position: spot.id, lane: spot.lane });
+    }
+  };
+
+  const panEnabled = stage !== 'lane-selection';
+
   return (
     <TrackContainer
       ref={containerRef}
-      panEnabled={panZoomEnabled}
+      panEnabled={panEnabled}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -414,216 +305,119 @@ const RaceTrack = ({
         zoom={zoom}
         animating={animating}
       >
-        <TrackSVG viewBox="0 0 1000 800">
-          <defs>
-            <linearGradient id="startFinishGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#ff0000" />
-              <stop offset="20%" stopColor="#ffffff" />
-              <stop offset="40%" stopColor="#ff0000" />
-              <stop offset="60%" stopColor="#ffffff" />
-              <stop offset="80%" stopColor="#ff0000" />
-              <stop offset="100%" stopColor="#ffffff" />
-            </linearGradient>
+        <svg viewBox="-20 -20 40 40" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+          <Track showNumbers={showPositionNumbers} />
+          {/* Clickable spots for interaction */}
+          {!loading && stage === 'lane-selection' && Object.values(lanes).map(lane => {
+            const startSpot = lane.find(s => s.id === '96');
+            if (!startSpot) return null;
+            const isSelectable = trackPositions && !Object.values(trackPositions).some(p => p.lane === startSpot.lane);
             
-            <filter id="glow">
-              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-              <feMerge> 
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-          </defs>
-          
-          {/* Track base */}
-          <TrackBase cx="500" cy="400" rx="280" ry="170" />
-          
-          {/* Track surface - 4 lanes */}
-          <TrackSurface cx="500" cy="400" rx="200" ry="120" width="20" />
-          <TrackSurface cx="500" cy="400" rx="220" ry="132" width="20" />
-          <TrackSurface cx="500" cy="400" rx="240" ry="144" width="20" />
-          <TrackSurface cx="500" cy="400" rx="260" ry="156" width="20" />
-          
-          {/* Lane markers */}
-          <LaneMarker cx="500" cy="400" rx="210" ry="126" />
-          <LaneMarker cx="500" cy="400" rx="230" ry="138" />
-          <LaneMarker cx="500" cy="400" rx="250" ry="150" />
-          
-          {/* Start/Finish line at position 96/1 */}
-          <StartFinishLine 
-            x={getPositionCoordinates(96, 1).x - 2} 
-            y={getPositionCoordinates(96, 1).y - 30}
-            width="4" 
-            height="60" 
-          />
-          
-          {/* Pit areas */}
-          <PitArea x="680" y="350" width="60" height="100" />
-          
-          {/* Pit-lane */}
-          <PitLane x="750" y="380" width="40" height="120" />
-          
-          {/* Interactive track areas for coin placement */}
-          {stage === 'coin' && Array.from({ length: 24 }, (_, i) => {
-            const position = i * 4 + 1; // Every 4th position
-            return [1, 2, 3, 4].map(lane => {
-              const coords = getPositionCoordinates(position, lane);
-              return (
-                <circle
-                  key={`clickable-${position}-${lane}`}
-                  cx={coords.x}
-                  cy={coords.y}
-                  r="20"
-                  fill="transparent"
-                  stroke="rgba(255, 215, 0, 0.2)"
-                  strokeWidth="1"
-                  strokeDasharray="3, 3"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onCoinPlace && onCoinPlace(position, lane)}
-                  onMouseEnter={(e) => {
-                    e.target.setAttribute('stroke', 'rgba(255, 215, 0, 0.8)');
-                    e.target.setAttribute('fill', 'rgba(255, 215, 0, 0.1)');
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.setAttribute('stroke', 'rgba(255, 215, 0, 0.2)');
-                    e.target.setAttribute('fill', 'transparent');
-                  }}
-                />
-              );
-            });
-          })}
-          
-          {/* Position spots for lane selection */}
-          {stage === 'lane-selection' && [1, 2, 3, 4].map(lane => {
-            const coords = getPositionCoordinates(96, lane);
             return (
-              <PositionSpot
-                key={`lane-${lane}`}
-                cx={coords.x}
-                cy={coords.y}
-                r="12"
-                highlighted={true}
-                selectable={true}
-                onClick={() => onLaneSelect && onLaneSelect(lane)}
+              <circle
+                key={`selectable-${startSpot.lane}`}
+                cx={startSpot.x}
+                cy={startSpot.y}
+                r="0.8"
+                fill={isSelectable ? "rgba(0, 255, 128, 0.5)" : "rgba(255, 0, 0, 0.3)"}
+                stroke={isSelectable ? "rgba(0, 255, 128, 1)" : "rgba(255, 0, 0, 0.6)"}
+                strokeWidth="0.1"
+                onClick={() => isSelectable && handleSpotClick(startSpot)}
+                style={{ cursor: isSelectable ? 'pointer' : 'not-allowed' }}
               />
             );
           })}
-          
-          {/* Position markers */}
-          {showPositionNumbers && Array.from({ length: 24 }, (_, i) => {
-            const position = i * 4 + 1; // Every 4th position starting from 1
-            const coords = getPositionCoordinates(position, 1);
+
+          {!loading && stage === 'coin-placement' && Object.values(lanes).flat().map(spot => (
+            <circle
+              key={`coin-spot-${spot.lane}-${spot.id}`}
+              cx={spot.x}
+              cy={spot.y}
+              r="0.4"
+              fill="rgba(255, 255, 0, 0.2)"
+              stroke="rgba(255, 255, 0, 0.5)"
+              strokeWidth="0.05"
+              onClick={() => handleSpotClick(spot)}
+              style={{ cursor: 'pointer' }}
+            />
+          ))}
+
+          {/* Placed coins */}
+          {placedCoins && Object.entries(placedCoins).map(([positionKey, coin]) => {
+            const [position, lane] = positionKey.split('-').map(Number);
+            const coords = getPositionCoordinates(position, lane);
+            
             return (
-              <g key={`pos-${position}`}>
-                <circle
-                  cx={coords.x}
-                  cy={coords.y}
-                  r="8"
-                  fill="rgba(255, 255, 255, 0.1)"
-                  stroke="rgba(255, 255, 255, 0.3)"
-                  strokeWidth="1"
-                />
+              <CoinMarkerGroup
+                key={positionKey}
+                transform={`translate(${coords.x}, ${coords.y})`}
+              >
+                <title>{`Coin placed by ${players.find(p => p.id === coin.placedBy)?.name || 'Unknown'}`}</title>
+                <circle r="0.5" fill={playerColors[coin.placedBy] || '#fff'} opacity="0.8" />
                 <text
-                  x={coords.x}
-                  y={coords.y + 2}
-                  textAnchor="middle"
-                  fontSize="8"
-                  fill="rgba(255, 255, 255, 0.7)"
-                  fontFamily="Rajdhani, sans-serif"
+                  fontSize="0.5"
+                  fill="#000"
                   fontWeight="bold"
+                  textAnchor="middle"
+                  dominantBaseline="central"
                 >
-                  {position}
+                  {coin.placedBy === activePlayerId ? coin.value.charAt(0) : '?'}
                 </text>
-              </g>
+              </CoinMarkerGroup>
             );
           })}
-        </TrackSVG>
 
-        {/* Placed coins */}
-        {Object.entries(placedCoins).map(([positionKey, coin]) => {
-          const [position, lane] = positionKey.split('-').map(Number);
-          const coords = getPositionCoordinates(position, lane);
-          
-          return (
-            <CoinMarker
-              key={positionKey}
-              faceUp={coin.placedBy === activePlayerId}
-              style={{
-                left: `${coords.x - 8}px`,
-                top: `${coords.y - 8}px`
-              }}
-              title={coin.placedBy === activePlayerId ? coin.value : 'Hidden coin'}
-            >
-              {coin.placedBy === activePlayerId ? coin.value.charAt(0) : '?'}
-            </CoinMarker>
-          );
-        })}
-
-        {/* Player pawns */}
-        {players.map((player) => {
-          const position = playerPositions[player.id];
-          if (!position) return null;
-          
-          let coords;
-          if (position.inPit) {
-            coords = getPitCoordinates(position.position || 1, false);
-          } else if (position.inPitLane) {
-            coords = getPitCoordinates(position.position || 1, true);
-          } else {
-            coords = getPositionCoordinates(position.position || 96, position.lane || 1);
-          }
-          
-          return (
-            <PlayerPawn
-              key={player.id}
-              color={playerColors[player.color]}
-              isActive={player.id === activePlayerId}
-              style={{
-                left: `${coords.x - 14}px`,
-                top: `${coords.y - 14}px`
-              }}
-              title={`${player.name} - Lap ${position.lap || 0}`}
-            >
-              {getPlayerInitials(player.name)}
-            </PlayerPawn>
-          );
-        })}
+          {/* Player pawns */}
+          {trackPositions && players.map(player => {
+            const position = trackPositions[player.id];
+            if (!position) return null;
+            
+            let coords;
+            if (position.inPit) {
+              coords = getPitCoordinates(position.position);
+            } else {
+              coords = getPositionCoordinates(position.position || 96, position.lane || 1);
+            }
+            
+            return (
+              <PlayerPawnGroup
+                key={player.id}
+                transform={`translate(${coords.x}, ${coords.y})`}
+                isRacing={position.isRacing}
+              >
+                <title>{`${player.name} - Lap ${position.lap || 0}`}</title>
+                <PlayerPawnCircle
+                  r="0.7"
+                  fill={playerColors[player.id]}
+                  isCurrentPlayer={player.id === activePlayerId}
+                />
+                <PlayerPawnText>
+                  {getPlayerInitials(player.name)}
+                </PlayerPawnText>
+              </PlayerPawnGroup>
+            );
+          })}
+        </svg>
       </TrackViewport>
 
       {/* Track controls */}
-      {panZoomEnabled && (
+      {showControls && (
         <TrackControls>
-          <ControlButton onClick={resetView}>
-            Reset View
-          </ControlButton>
-          <ControlButton onClick={() => setZoom(prev => Math.min(3, prev * 1.2))}>
-            Zoom In
-          </ControlButton>
-          <ControlButton onClick={() => setZoom(prev => Math.max(0.5, prev * 0.8))}>
-            Zoom Out
-          </ControlButton>
+          <ControlButton onClick={() => handleZoom(0.2)} disabled={!panEnabled}>+</ControlButton>
+          <ControlButton onClick={() => handleZoom(-0.2)} disabled={!panEnabled}>-</ControlButton>
+          <ControlButton onClick={handleResetView} disabled={!panEnabled}>Reset</ControlButton>
         </TrackControls>
       )}
 
       {/* Info panel */}
-      <InfoPanel>
-        <div className="title">
-          {stage === 'lane-selection' && 'Lane Selection'}
-          {stage === 'coin' && 'Coin Placement'}
-          {stage === 'racing' && `Lap ${currentLap}/${totalLaps}`}
-        </div>
-        {stage === 'lane-selection' && (
-          <div className="info">Select your starting lane</div>
-        )}
-        {stage === 'coin' && (
-          <div className="info">Place coins strategically</div>
-        )}
-        {stage === 'racing' && (
-          <>
-            <div className="info">Players: {players.length}</div>
-            <div className="info">Active: {players.find(p => p.id === activePlayerId)?.name || 'None'}</div>
-          </>
-        )}
-      </InfoPanel>
+      {showInfo && (
+        <InfoPanel>
+          <div className="info">Zoom: {zoom.toFixed(2)}x</div>
+          <div className="info">Stage: {stage}</div>
+          {loading && <div className="info">Loading Track...</div>}
+          {error && <div className="info" style={{color: 'red'}}>{error}</div>}
+        </InfoPanel>
+      )}
     </TrackContainer>
   );
 };

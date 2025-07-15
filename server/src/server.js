@@ -582,10 +582,21 @@ io.on('connection', (socket) => {
     // Check if all players selected lanes
     const allSelected = room.players.every(p => p.lane !== null);
     if (allSelected) {
+      console.log(`🔄 Current stage before advancement: ${room.gameState.currentStage}`);
       room.advanceToNextStage(); // to coin stage
-      io.to(player.roomId).emit('lane-selection-complete', {
-        room: room.toJSON()
+      console.log(`🔄 Stage after advancement: ${room.gameState.currentStage}`);
+
+      // Send updated room data to all players with detailed info
+      room.players.forEach(roomPlayer => {
+        const playerSocket = [...playerSockets.entries()].find(([socketId, data]) => data.id === roomPlayer.id);
+        if (playerSocket) {
+          io.to(playerSocket[0]).emit('stage-advanced', {
+            room: room.toDetailedJSON(roomPlayer.id)
+          });
+        }
       });
+
+      console.log(`Advanced to ${room.gameState.currentStage} stage in room: ${room.name}`);
     }
   });
 
@@ -638,10 +649,21 @@ io.on('connection', (socket) => {
       // Check if all players placed all coins
       const allPlaced = room.players.every(p => p.drawnCoins.length === 0);
       if (allPlaced) {
+        console.log(`🔄 Current stage before advancement: ${room.gameState.currentStage}`);
         room.advanceToNextStage(); // to racing stage
-        io.to(player.roomId).emit('coin-stage-complete', {
-          room: room.toJSON()
+        console.log(`🔄 Stage after advancement: ${room.gameState.currentStage}`);
+
+        // Send updated room data to all players with detailed info
+        room.players.forEach(roomPlayer => {
+          const playerSocket = [...playerSockets.entries()].find(([socketId, data]) => data.id === roomPlayer.id);
+          if (playerSocket) {
+            io.to(playerSocket[0]).emit('stage-advanced', {
+              room: room.toDetailedJSON(roomPlayer.id)
+            });
+          }
         });
+
+        console.log(`Advanced to ${room.gameState.currentStage} stage in room: ${room.name}`);
       }
     }
   });
