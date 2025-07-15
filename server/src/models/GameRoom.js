@@ -198,97 +198,25 @@ class GameRoom {
     console.log(`🎯 First player set: ${this.getActivePlayer()?.name}, top card: ${topCard ? `${topCard.rank} of ${topCard.suit}` : 'None'}`);
   }
 
-  // Start animated card dealing
-  startAnimatedCardDealing(io, playerSockets) {
-    console.log('🎯 Starting animated card dealing...');
+  // Deal cards instantly and start storm
+  dealCardsAndStartStorm(io, playerSockets) {
+    console.log('🎯 Dealing cards instantly and starting storm...');
+    console.log('🔍 Debug: this.dealHands exists:', !!this.dealHands);
+    console.log('🔍 Debug: dealHands size:', this.dealHands ? this.dealHands.size : 'N/A');
+    
     if (!this.dealHands) {
       console.log('❌ No dealHands available');
       return;
     }
     
-    const cardsPerHand = this.settings.cardsPerHand;
-    const dealerIndex = this.players.findIndex(p => p.dealerButton);
+    console.log(`💳 Dealing ${this.settings.cardsPerHand} cards per hand to ${this.players.length} players`);
     
-    console.log(`💳 Dealing ${cardsPerHand} cards per hand to ${this.players.length} players`);
-    
-    // Create dealing order: start with player after dealer, go clockwise (GameDevGuide requirement)
-    const dealingOrder = [];
-    for (let i = 0; i < this.players.length; i++) {
-      const playerIndex = (dealerIndex + 1 + i) % this.players.length;
-      dealingOrder.push(this.players[playerIndex]);
-    }
-    
-    let currentCard = 0;
-    
-    const dealNextCard = () => {
-      if (currentCard >= cardsPerHand) {
-        // All cards dealt, now flip one card for discard pile
-        console.log('✅ All cards dealt, dealing discard card');
-        this.dealInitialDiscardCard(io, playerSockets);
-        return;
-      }
-      
-      console.log(`🎯 Dealing round ${currentCard + 1}/${cardsPerHand}`);
-      
-      // Deal one card to each player in order (GameDevGuide: 0.3s per card)
-      dealingOrder.forEach((player, index) => {
-        setTimeout(() => {
-          const playerCards = this.dealHands.get(player.id) || [];
-          if (currentCard < playerCards.length) {
-            const card = playerCards[currentCard];
-            
-            console.log(`🎯 Dealing card ${currentCard + 1} to ${player.name}: ${card.rank} of ${card.suit}`);
-            
-            // Send card-dealt animation event to all players in the room
-            io.to(this.id).emit('card-dealt', {
-              playerId: player.id,
-              playerName: player.name,
-              cardIndex: currentCard,
-              totalCards: cardsPerHand,
-              card: { rank: 'back', suit: 'back' }, // Face down during dealing
-              dealingToPlayer: index + 1,
-              totalPlayers: this.players.length
-            });
-          }
-        }, index * 300); // GameDevGuide: 0.3s per card = 300ms
-      });
-      
-      currentCard++;
-      
-      // Schedule next round of dealing (GameDevGuide timing compliance)
-      setTimeout(() => dealNextCard(), this.players.length * 300 + 100); // 300ms per player + small buffer
-    };
-    
-    // Start the dealing animation with proper delay
-    setTimeout(() => dealNextCard(), 1000); // Initial delay for better UX
-  }
-
-  // Deal initial discard card
-  dealInitialDiscardCard(io, playerSockets) {
-    console.log('🎯 Dealing initial discard card');
-    // Turn over one card to start the discard pile
+    // Deal initial discard card
     const discardCard = this.gameState.deck.pop();
     this.gameState.discardPile.push(discardCard);
-    
     console.log(`🔄 Discard card: ${discardCard.rank} of ${discardCard.suit}`);
     
-    // Send discard card dealt event
-    io.to(this.id).emit('discard-card-dealt', {
-      card: discardCard
-    });
-    
-    // Wait a moment then finalize dealing
-    setTimeout(() => {
-      console.log('✅ Finalizing dealing and starting storm');
-      this.finalizeDealingAndStartStorm(io, playerSockets);
-    }, 1500); // Increased delay to let players see the discard card
-  }
-
-  // Finalize dealing and start storm
-  finalizeDealingAndStartStorm(io, playerSockets) {
-    console.log('🎯 Finalizing dealing and starting storm stage');
-    
-    // Now actually assign cards to players
+    // Assign cards to players instantly
     for (const player of this.players) {
       const playerCards = this.dealHands.get(player.id) || [];
       player.addCards(playerCards);
@@ -297,6 +225,14 @@ class GameRoom {
     
     // Clear the temporary dealing hands
     this.dealHands = null;
+    
+    // Start storm stage immediately
+    this.startStormStage(io, playerSockets);
+  }
+
+  // Start storm stage
+  startStormStage(io, playerSockets) {
+    console.log('🎯 Starting storm stage');
     
     console.log('🎯 Sending storm-started events to all players');
     
@@ -310,7 +246,7 @@ class GameRoom {
       }
     });
     
-    console.log('✅ Storm stage fully initialized');
+    console.log('✅ Storm stage started successfully');
   }
 
   // Setup Lane Selection stage
@@ -356,12 +292,416 @@ class GameRoom {
 
   // Setup Racing stage
   setupRacingStage() {
+    // Initialize track positions if first time
+    if (this.gameState.trackPositions.size === 0) {
+      this.gameState.initializeTrackPositions(this.players.map(p => p.id));
+    }
+    
     // Set active player based on Storm finishing order
     const stormWinner = this.players.find(p => p.stormFinishOrder === 1);
     if (stormWinner) {
       const winnerIndex = this.players.findIndex(p => p.id === stormWinner.id);
       this.setActivePlayer(winnerIndex);
     }
+  }
+
+  // Roll dice for racing
+  rollDice(playerId, diceType = 'movement') {
+    console.log(`🎲 Rolling ${diceType} dice for player ${playerId}`);
+    
+    try {
+      const player = this.players.find(p => p.id === playerId);
+      if (!player) {
+        return { success: false, error: 'Player not found' };
+      }
+      
+      const position = this.gameState.trackPositions.get(playerId);
+      if (!position) {
+        return { success: false, error: 'Player position not found' };
+      }
+      
+      let values = [];
+      
+      if (diceType === 'movement') {
+        // Use game settings for number of dice, except in pit
+        const numberOfDice = position.inPit ? 1 : this.settings.numberOfDice;
+        
+        for (let i = 0; i < numberOfDice; i++) {
+          values.push(Math.floor(Math.random() * 6) + 1);
+        }
+        
+        console.log(`🎲 Movement dice rolled: ${values.join(', ')}`);
+        
+      } else if (diceType === 'lane-change') {
+        // Lane-change die: 1=L1, 2=R1, 3=Check Engine, 4=L2, 5=R2, 6=Check Engine
+        const roll = Math.floor(Math.random() * 6) + 1;
+        values = [roll];
+        
+        console.log(`🎲 Lane-change die rolled: ${roll}`);
+      }
+      
+      // Store dice roll result for player
+      player.lastDiceRoll = { type: diceType, values: values };
+      
+      return { success: true, values: values };
+      
+    } catch (error) {
+      console.error('Error rolling dice:', error);
+      return { success: false, error: 'Failed to roll dice' };
+    }
+  }
+
+  // Process movement after dice roll
+  processMovement(playerId, movementData) {
+    console.log(`🚗 Processing movement for player ${playerId}:`, movementData);
+    
+    try {
+      const player = this.players.find(p => p.id === playerId);
+      if (!player) {
+        return { success: false, error: 'Player not found' };
+      }
+      
+      if (!player.lastDiceRoll) {
+        return { success: false, error: 'No dice roll found' };
+      }
+      
+      const currentPosition = this.gameState.trackPositions.get(playerId);
+      if (!currentPosition) {
+        return { success: false, error: 'Player position not found' };
+      }
+      
+      const oldPosition = { ...currentPosition };
+      let newPosition = { ...currentPosition };
+      let coinsTriggered = [];
+      
+      // Process movement based on dice type
+      if (player.lastDiceRoll.type === 'movement') {
+        const totalMove = player.lastDiceRoll.values.reduce((sum, val) => sum + val, 0);
+        const result = this.movePlayerForward(playerId, totalMove);
+        newPosition = result.newPosition;
+        coinsTriggered = result.coinsTriggered;
+        
+      } else if (player.lastDiceRoll.type === 'lane-change') {
+        const roll = player.lastDiceRoll.values[0];
+        const result = this.changeLane(playerId, roll);
+        newPosition = result.newPosition;
+        coinsTriggered = result.coinsTriggered;
+      }
+      
+      // Update player position
+      this.gameState.updatePlayerPosition(playerId, newPosition.position, newPosition.lane, newPosition.lap);
+      
+      // Check if player finished race
+      const raceComplete = this.checkRaceComplete(playerId);
+      let finishOrder = null;
+      
+      if (raceComplete) {
+        finishOrder = this.gameState.finishedPlayers.length + 1;
+        this.gameState.finishedPlayers.push({ playerId: playerId, finishOrder: finishOrder });
+      }
+      
+      // Advance to next player
+      const currentPlayerIndex = this.players.findIndex(p => p.id === playerId);
+      const nextPlayerIndex = this.getNextRacingPlayer(currentPlayerIndex);
+      this.setActivePlayer(nextPlayerIndex);
+      
+      // Check if round is complete
+      const roundComplete = this.checkRoundComplete();
+      let results = null;
+      
+      if (roundComplete) {
+        results = this.getRacingResults();
+      }
+      
+      // Clear dice roll
+      player.lastDiceRoll = null;
+      
+      return {
+        success: true,
+        oldPosition: oldPosition,
+        newPosition: newPosition,
+        coinsTriggered: coinsTriggered,
+        raceComplete: raceComplete,
+        finishOrder: finishOrder,
+        roundComplete: roundComplete,
+        results: results
+      };
+      
+    } catch (error) {
+      console.error('Error processing movement:', error);
+      return { success: false, error: 'Failed to process movement' };
+    }
+  }
+
+  // Move player forward by specified amount
+  movePlayerForward(playerId, moveAmount) {
+    const position = this.gameState.trackPositions.get(playerId);
+    let newPosition = { ...position };
+    let coinsTriggered = [];
+    
+    console.log(`🚗 Moving player ${playerId} forward ${moveAmount} spaces from position ${position.position}`);
+    
+    // Handle movement from pit
+    if (position.inPit) {
+      // From pit, move to pit-lane
+      if (moveAmount <= 5) {
+        newPosition.inPit = false;
+        newPosition.inPitLane = true;
+        newPosition.position = moveAmount; // Pit-lane position 1-5
+      } else {
+        // Hit pit-lane wall, stay in pit
+        console.log(`🚗 Player hit pit-lane wall, staying in pit`);
+      }
+      return { newPosition, coinsTriggered };
+    }
+    
+    // Handle movement from pit-lane
+    if (position.inPitLane) {
+      const newPitLanePos = position.position + moveAmount;
+      if (newPitLanePos > 5) {
+        // Hit pit-lane wall, go back to pit
+        newPosition.inPitLane = false;
+        newPosition.inPit = true;
+        newPosition.position = 0;
+        console.log(`🚗 Player hit pit-lane wall, sent back to pit`);
+      } else {
+        newPosition.position = newPitLanePos;
+      }
+      return { newPosition, coinsTriggered };
+    }
+    
+    // Normal track movement
+    let remainingMove = moveAmount;
+    
+    while (remainingMove > 0) {
+      const nextPos = (newPosition.position % 96) + 1;
+      
+      // Check for obstruction (other players)
+      const obstructed = this.isPositionObstructed(nextPos, newPosition.lane, playerId);
+      
+      if (obstructed) {
+        console.log(`🚗 Position ${nextPos} lane ${newPosition.lane} is obstructed, stopping movement`);
+        break;
+      }
+      
+      // Move to next position
+      newPosition.position = nextPos;
+      remainingMove--;
+      
+      // Check for lap completion (crossing start/finish line)
+      if (newPosition.position === 1 && position.position === 96) {
+        newPosition.lap++;
+        console.log(`🏁 Player ${playerId} completed lap ${newPosition.lap}`);
+      }
+      
+      // Check for coins on this position
+      const coinKey = `${newPosition.position}-${newPosition.lane}`;
+      const coin = this.gameState.placedCoins.get(coinKey);
+      
+      if (coin) {
+        console.log(`🪙 Player triggered coin: ${coin.value}`);
+        coinsTriggered.push(coin);
+        
+        // Remove coin from track
+        this.gameState.placedCoins.delete(coinKey);
+        
+        // Apply coin effect
+        const coinEffect = this.applyCoinEffect(playerId, coin, newPosition);
+        newPosition = coinEffect.newPosition;
+        coinsTriggered = coinsTriggered.concat(coinEffect.additionalCoins || []);
+      }
+    }
+    
+    return { newPosition, coinsTriggered };
+  }
+
+  // Change lane based on lane-change die
+  changeLane(playerId, dieValue) {
+    const position = this.gameState.trackPositions.get(playerId);
+    let newPosition = { ...position };
+    let coinsTriggered = [];
+    
+    console.log(`🚗 Player ${playerId} changing lanes with die value ${dieValue}`);
+    
+    // Lane-change die faces: 1=L1, 2=R1, 3=Check Engine, 4=L2, 5=R2, 6=Check Engine
+    switch (dieValue) {
+      case 1: // L1 - Move one lane left (towards inside)
+        if (newPosition.lane > 1) {
+          const targetLane = newPosition.lane - 1;
+          if (!this.isPositionObstructed(newPosition.position, targetLane, playerId)) {
+            newPosition.lane = targetLane;
+          }
+        }
+        break;
+        
+      case 2: // R1 - Move one lane right (towards outside)
+        if (newPosition.lane < 4) {
+          const targetLane = newPosition.lane + 1;
+          if (!this.isPositionObstructed(newPosition.position, targetLane, playerId)) {
+            newPosition.lane = targetLane;
+          }
+        }
+        break;
+        
+      case 3: // Check Engine - Turn ends
+      case 6: // Check Engine - Turn ends
+        console.log(`🚗 Check Engine! Turn ends for player ${playerId}`);
+        break;
+        
+      case 4: // L2 - Move up to two lanes left
+        for (let i = 1; i <= 2 && newPosition.lane > 1; i++) {
+          const targetLane = newPosition.lane - 1;
+          if (!this.isPositionObstructed(newPosition.position, targetLane, playerId)) {
+            newPosition.lane = targetLane;
+          } else {
+            break;
+          }
+        }
+        break;
+        
+      case 5: // R2 - Move up to two lanes right
+        for (let i = 1; i <= 2 && newPosition.lane < 4; i++) {
+          const targetLane = newPosition.lane + 1;
+          if (!this.isPositionObstructed(newPosition.position, targetLane, playerId)) {
+            newPosition.lane = targetLane;
+          } else {
+            break;
+          }
+        }
+        break;
+    }
+    
+    // Check for coins on new position
+    const coinKey = `${newPosition.position}-${newPosition.lane}`;
+    const coin = this.gameState.placedCoins.get(coinKey);
+    
+    if (coin) {
+      console.log(`🪙 Player triggered coin during lane change: ${coin.value}`);
+      coinsTriggered.push(coin);
+      
+      // Remove coin from track
+      this.gameState.placedCoins.delete(coinKey);
+      
+      // Apply coin effect
+      const coinEffect = this.applyCoinEffect(playerId, coin, newPosition);
+      newPosition = coinEffect.newPosition;
+      coinsTriggered = coinsTriggered.concat(coinEffect.additionalCoins || []);
+    }
+    
+    return { newPosition, coinsTriggered };
+  }
+
+  // Check if position is obstructed by another player
+  isPositionObstructed(position, lane, excludePlayerId) {
+    for (const [playerId, playerPos] of this.gameState.trackPositions.entries()) {
+      if (playerId !== excludePlayerId && 
+          playerPos.position === position && 
+          playerPos.lane === lane &&
+          !playerPos.inPit &&
+          !playerPos.inPitLane) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Apply coin effect to player
+  applyCoinEffect(playerId, coin, currentPosition) {
+    let newPosition = { ...currentPosition };
+    let additionalCoins = [];
+    
+    console.log(`🪙 Applying coin effect ${coin.value} to player ${playerId}`);
+    
+    if (coin.value === 'tow-to-pit') {
+      // Send to pit
+      newPosition.inPit = true;
+      newPosition.inPitLane = false;
+      newPosition.position = 0;
+      console.log(`🚗 Player ${playerId} towed to pit`);
+      
+    } else {
+      // Movement coins (+2, +3, +4, +5, -2, -3, -4, -5)
+      const moveAmount = parseInt(coin.value);
+      
+      if (moveAmount > 0) {
+        // Forward movement
+        const result = this.movePlayerForward(playerId, moveAmount);
+        newPosition = result.newPosition;
+        additionalCoins = result.coinsTriggered;
+        
+      } else {
+        // Backward movement
+        const backwardAmount = Math.abs(moveAmount);
+        newPosition.position = Math.max(1, newPosition.position - backwardAmount);
+        
+        // Handle lap regression if needed
+        if (newPosition.position === 1 && currentPosition.position > 90) {
+          newPosition.lap = Math.max(0, newPosition.lap - 1);
+        }
+      }
+    }
+    
+    return { newPosition, additionalCoins };
+  }
+
+  // Get next player for racing (skip finished players)
+  getNextRacingPlayer(currentPlayerIndex) {
+    const totalPlayers = this.players.length;
+    let nextIndex = (currentPlayerIndex + 1) % totalPlayers;
+    let attempts = 0;
+    
+    // Skip players who have finished the race
+    while (attempts < totalPlayers) {
+      const nextPlayer = this.players[nextIndex];
+      const isFinished = this.gameState.finishedPlayers.some(fp => fp.playerId === nextPlayer.id);
+      
+      if (!isFinished) {
+        return nextIndex;
+      }
+      nextIndex = (nextIndex + 1) % totalPlayers;
+      attempts++;
+    }
+    
+    // If all players finished, return current index
+    return currentPlayerIndex;
+  }
+
+  // Check if player completed the race
+  checkRaceComplete(playerId) {
+    const position = this.gameState.trackPositions.get(playerId);
+    if (!position) return false;
+    
+    // Player finishes if they complete all laps and cross finish line
+    return position.lap >= this.settings.numberOfLaps && position.position === 1;
+  }
+
+  // Check if racing round is complete
+  checkRoundComplete() {
+    // Round is complete when all players finish or only one player remains
+    const activePlayers = this.players.filter(p => 
+      !this.gameState.finishedPlayers.some(fp => fp.playerId === p.id)
+    );
+    
+    return activePlayers.length <= 1;
+  }
+
+  // Get racing results
+  getRacingResults() {
+    const results = [...this.gameState.finishedPlayers];
+    
+    // Add remaining players as DNF
+    this.players.forEach(player => {
+      const isFinished = results.some(r => r.playerId === player.id);
+      if (!isFinished) {
+        results.push({
+          playerId: player.id,
+          finishOrder: results.length + 1,
+          status: 'DNF'
+        });
+      }
+    });
+    
+    return results.sort((a, b) => a.finishOrder - b.finishOrder);
   }
 
   // Get next player in turn order (skip finished players)

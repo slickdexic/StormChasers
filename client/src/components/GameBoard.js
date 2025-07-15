@@ -405,55 +405,6 @@ const StormContainer = styled.div`
   }
 `;
 
-const CardDealingOverlay = styled.div`
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  animation: ${fadeIn} 0.3s ease-out;
-  
-  @keyframes cardToHand {
-    from {
-      transform: translate(-50%, -50%) scale(1);
-      opacity: 1;
-    }
-    to {
-      transform: translate(200px, 300px) scale(0.8);
-      opacity: 0.8;
-    }
-  }
-`;
-
-const DealingMessage = styled.div`
-  color: white;
-  font-size: 1.5rem;
-  text-align: center;
-  margin-bottom: 2rem;
-  font-weight: 600;
-  
-  small {
-    color: #00d4ff;
-    font-size: 1rem;
-    font-weight: 400;
-  }
-`;
-
-const DealingProgress = styled.div`
-  width: 300px;
-  height: 20px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  overflow: hidden;
-  border: 2px solid rgba(0, 212, 255, 0.3);
-`;
-
 const GamePlayArea = styled.div`
   display: flex;
   flex-direction: column;
@@ -632,6 +583,77 @@ const DiceContainer = styled.div`
   border: 2px solid rgba(255, 255, 255, 0.2);
 `;
 
+const DiceSelectionContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 15px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  
+  h3 {
+    color: #ffd700;
+    margin: 0;
+    font-size: 1.5rem;
+  }
+`;
+
+const DiceTypeButton = styled.button`
+  padding: 1rem 2rem;
+  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 200px;
+  
+  &:hover {
+    background: linear-gradient(135deg, #00b8e6, #007399);
+    transform: translateY(-2px);
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+  
+  strong {
+    font-size: 1.2rem;
+  }
+  
+  small {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.8rem;
+  }
+`;
+
+const MovementContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 15px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  
+  h3 {
+    color: #ffd700;
+    margin: 0;
+    font-size: 1.5rem;
+  }
+  
+  p {
+    color: #fff;
+    margin: 0;
+    font-size: 1rem;
+    text-transform: capitalize;
+  }
+`;
+
 const StormResultsOverlay = styled.div`
   position: fixed;
   top: 0;
@@ -718,12 +740,15 @@ function GameBoard() {
     socket,
     leaveRoom,
     selectDealerCard,
-    cardDealingAnimation,
-    discardCardDealt,
     drawCards,
     playCard,
     stormResults,
-    continueToNextStage
+    continueToNextStage,
+    placeCoin,
+    continueToRacing,
+    selectLane,
+    rollDice,
+    chooseMovement
     // Game actions would be added here
   } = useGame();
   
@@ -731,8 +756,14 @@ function GameBoard() {
   const [lastDiceRoll, setLastDiceRoll] = useState([1, 1]);
   const [selectedQueenCard, setSelectedQueenCard] = useState(null);
   const [queenSelectingPlayer, setQueenSelectingPlayer] = useState(null);
+  const [selectedCoin, setSelectedCoin] = useState(null);
 
   const currentStage = currentRoom?.gameState?.currentStage || 'lobby';
+  
+  // Debug logging for stage changes
+  console.log('🎯 GameBoard currentStage:', currentStage);
+  console.log('🎯 GameBoard room data:', currentRoom?.name, currentRoom?.gameState?.stormRound);
+  
   const players = currentRoom?.players || [];
 
   // Ensure players have proper card count data for the header display
@@ -757,19 +788,15 @@ function GameBoard() {
     { rank: '8', suit: 'spades' }
   ];
 
-  const playerCoins = [
-    { type: 'gold', value: 5 },
-    { type: 'gold', value: 3 },
-    { type: 'silver', value: 2 },
-    { type: 'bronze', value: 1 }
-  ];
+  // Get player's coins from room data
+  const playerCoins = player?.drawnCoins || [];
 
   const mockPositions = {
     [player?.id]: 12,
     // Other players would have their positions
   };
 
-  const rollDice = () => {
+  const rollLocalDice = () => {
     const newValues = [
       Math.floor(Math.random() * 6) + 1,
       Math.floor(Math.random() * 6) + 1
@@ -777,10 +804,11 @@ function GameBoard() {
     setLastDiceRoll(newValues);
   };
 
-  const handleDiceRoll = (values) => {
+  const handleDiceRoll = (values, diceType = 'movement') => {
     setLastDiceRoll(values);
-    // Here you would emit the dice roll to the server
-    console.log('Dice rolled:', values);
+    // Send dice roll to server
+    rollDice(diceType);
+    console.log('Dice rolled:', values, 'type:', diceType);
   };
 
   const handleDealerCardSelection = (cardIndex) => {
@@ -1257,6 +1285,24 @@ function GameBoard() {
               {isMyTurn ? " Your turn to select!" : ` Waiting for ${currentActivePlayer?.name || 'player'} to select...`}
             </StageDescription>
             
+            <RaceTrack 
+              players={players}
+              currentLap={0}
+              totalLaps={currentRoom?.settings?.numberOfLaps || 3}
+              playerPositions={currentRoom?.gameState?.trackPositions || {}}
+              placedCoins={currentRoom?.gameState?.placedCoins || {}}
+              activePlayerId={currentActivePlayer?.id}
+              stage="lane-selection"
+              onLaneSelect={(lane) => {
+                if (!isMyTurn) return;
+                setSelectedLane(lane);
+                selectLane(lane);
+              }}
+              panZoomEnabled={false}
+              focusOnPolePosition={true}
+              showPositionNumbers={false}
+            />
+            
             <LaneGrid>
               {[1, 2, 3, 4].map(lane => {
                 const laneOccupied = currentRoom?.players?.some(p => p.lane === lane);
@@ -1267,10 +1313,7 @@ function GameBoard() {
                     onClick={() => {
                       if (!isMyTurn || laneOccupied) return;
                       setSelectedLane(lane);
-                      // Emit lane selection to server
-                      if (socket) {
-                        socket.emit('select-lane', { lane });
-                      }
+                      selectLane(lane);
                     }}
                     style={{
                       opacity: laneOccupied ? 0.5 : 1,
@@ -1301,62 +1344,146 @@ function GameBoard() {
       case 'coin-stage':
         return (
           <CoinStageContainer>
-            <StageTitle>Coin Placement</StageTitle>
+            <StageTitle>🪙 Coin Placement Stage</StageTitle>
             <StageDescription>
-              Place your coins on the track to affect movement and strategy.
+              Place your coins strategically on the race track. Coins affect movement during racing.
             </StageDescription>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '2rem' }}>
               <CoinPlacementArea>
+                <h3 style={{ color: '#ffd700', marginBottom: '1rem' }}>Race Track</h3>
                 <RaceTrack
-                  players={players}
-                  playerPositions={mockPositions}
-                  showPositionMarkers={true}
+                  players={currentRoom?.players || []}
+                  currentLap={0}
+                  totalLaps={currentRoom?.settings?.numberOfLaps || 3}
+                  playerPositions={currentRoom?.gameState?.trackPositions || {}}
+                  placedCoins={currentRoom?.gameState?.placedCoins || {}}
+                  activePlayerId={player?.id}
+                  stage="coin"
+                  onCoinPlace={(position, lane) => {
+                    if (selectedCoin) {
+                      placeCoin(selectedCoin.id, `${position}-${lane}`);
+                      setSelectedCoin(null);
+                    }
+                  }}
+                  panZoomEnabled={true}
+                  focusOnPolePosition={false}
+                  showPositionNumbers={true}
                 />
               </CoinPlacementArea>
               
               <SidebarSection>
-                <SectionTitle>Your Coins</SectionTitle>
-                <CoinCollection
-                  coins={playerCoins}
-                  size="large"
-                  interactive={true}
-                  groupByType={true}
-                />
+                <SectionTitle>Your Coins ({playerCoins.length})</SectionTitle>
+                {playerCoins.length > 0 ? (
+                  <CoinCollection
+                    coins={playerCoins}
+                    size="large"
+                    interactive={true}
+                    groupByType={true}
+                    onCoinSelect={(coin) => {
+                      setSelectedCoin(coin);
+                    }}
+                  />
+                ) : (
+                  <div style={{ color: '#888', fontStyle: 'italic', padding: '2rem', textAlign: 'center' }}>
+                    No coins available<br />
+                    <small>Coins are distributed based on Storm stage finishing order</small>
+                  </div>
+                )}
+                
+                {selectedCoin && (
+                  <div style={{ 
+                    marginTop: '1rem', 
+                    padding: '1rem', 
+                    background: 'rgba(255, 215, 0, 0.1)', 
+                    border: '2px solid #ffd700', 
+                    borderRadius: '8px',
+                    textAlign: 'center'
+                  }}>
+                    <strong>Selected Coin: {selectedCoin.value}</strong><br />
+                    <small>Click on the track to place it</small>
+                  </div>
+                )}
+                
+                {isHost && currentRoom?.players?.every(p => (p.drawnCoins || []).length === 0) && (
+                  <div style={{ marginTop: '2rem' }}>
+                    <ContinueButton onClick={continueToRacing}>
+                      Continue to Racing 🏁
+                    </ContinueButton>
+                  </div>
+                )}
+                
+                <div style={{ marginTop: '1rem', fontSize: '0.9rem', color: '#aaa' }}>
+                  <strong>Coin Values:</strong><br />
+                  • Positive: Move forward<br />
+                  • Negative: Move backward<br />
+                  • Tow-to-Pit: Special effect
+                </div>
               </SidebarSection>
             </div>
           </CoinStageContainer>
         );
 
       case 'racing':
+        const isPlayerTurn = currentRoom?.gameState?.activePlayerId === player?.id;
+        const playerPosition = currentRoom?.gameState?.trackPositions?.[player?.id];
+        const playerHasDiceRoll = player?.lastDiceRoll;
+        
         return (
           <RacingContainer>
             <StageTitle>Racing Stage</StageTitle>
             <StageDescription>
-              Roll dice and race to victory! Use strategy and luck to cross the finish line first.
+              {isPlayerTurn ? "It's your turn! Choose your dice type and roll." : `Waiting for ${currentRoom?.players?.find(p => p.id === currentRoom?.gameState?.activePlayerId)?.name || 'player'} to move.`}
             </StageDescription>
             
             <RaceTrack
               players={players}
-              currentLap={1}
+              currentLap={playerPosition?.lap || 0}
               totalLaps={currentRoom?.settings?.numberOfLaps || 3}
-              playerPositions={mockPositions}
-              speed={lastDiceRoll.reduce((a, b) => a + b, 0) * 10}
+              playerPositions={currentRoom?.gameState?.trackPositions || {}}
+              placedCoins={currentRoom?.gameState?.placedCoins || {}}
+              activePlayerId={currentRoom?.gameState?.activePlayerId}
+              stage="racing"
+              panZoomEnabled={true}
+              focusOnPolePosition={false}
+              showPositionNumbers={false}
             />
             
-            <DiceContainer>
-              <DiceRoller 
-                numberOfDice={currentRoom?.settings?.numberOfDice || 1}
-                size="large"
-                onRoll={handleDiceRoll}
-              />
-            </DiceContainer>
+            {isPlayerTurn && !playerHasDiceRoll && (
+              <DiceSelectionContainer>
+                <h3>Choose Your Dice Type</h3>
+                <DiceTypeButton onClick={() => handleDiceRoll([], 'movement')}>
+                  <strong>Movement Dice</strong>
+                  <br />
+                  <small>{playerPosition?.inPit ? '1 die (pit rule)' : `${currentRoom?.settings?.numberOfDice || 1} die(s)`}</small>
+                </DiceTypeButton>
+                
+                {!playerPosition?.inPit && (
+                  <DiceTypeButton onClick={() => handleDiceRoll([], 'lane-change')}>
+                    <strong>Lane-Change Die</strong>
+                    <br />
+                    <small>Change lanes or check engine</small>
+                  </DiceTypeButton>
+                )}
+              </DiceSelectionContainer>
+            )}
             
-            <RaceControls>
-              <ActionButton>Move Forward</ActionButton>
-              <ActionButton>Use Card</ActionButton>
-              <ActionButton>Pit Stop</ActionButton>
-            </RaceControls>
+            {isPlayerTurn && playerHasDiceRoll && (
+              <MovementContainer>
+                <h3>Dice Result: {playerHasDiceRoll.values.join(', ')}</h3>
+                <p>Type: {playerHasDiceRoll.type}</p>
+                <ActionButton onClick={() => chooseMovement({ action: 'move' })}>
+                  Confirm Movement
+                </ActionButton>
+              </MovementContainer>
+            )}
+            
+            {!isPlayerTurn && (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#888' }}>
+                <p>Waiting for other players...</p>
+                <small>Current turn: {currentRoom?.players?.find(p => p.id === currentRoom?.gameState?.activePlayerId)?.name || 'Unknown'}</small>
+              </div>
+            )}
           </RacingContainer>
         );
 
@@ -1386,66 +1513,6 @@ function GameBoard() {
       <StageContainer>
         {renderStage()}
       </StageContainer>
-
-      {/* GameDevGuide: Cards animate into hand area, one at a time, 0.3s per card */}
-      {cardDealingAnimation && (
-        <CardDealingOverlay>
-          {/* Simple animated card moving to player's hand */}
-          <div style={{
-            position: 'absolute',
-            top: '45%',
-            left: '25%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 1002
-          }}>
-            <PlayingCard 
-              isBack={true} 
-              size="small"
-              style={{
-                animation: 'cardToHand 0.3s ease-out forwards',
-                boxShadow: '0 4px 12px rgba(255, 215, 0, 0.6)'
-              }}
-            />
-          </div>
-          
-          <div style={{
-            position: 'absolute',
-            bottom: '20%',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            color: '#ffd700',
-            fontSize: '18px',
-            fontWeight: 'bold',
-            textAlign: 'center',
-            textShadow: '0 2px 4px rgba(0, 0, 0, 0.8)',
-            background: 'rgba(0, 0, 0, 0.7)',
-            padding: '15px 30px',
-            borderRadius: '10px',
-            border: '2px solid #ffd700'
-          }}>
-            Dealing to {cardDealingAnimation.playerName}
-            <div style={{ fontSize: '14px', marginTop: '5px', opacity: 0.9 }}>
-              Card {cardDealingAnimation.cardIndex + 1} of {cardDealingAnimation.totalCards}
-            </div>
-          </div>
-        </CardDealingOverlay>
-      )}
-
-      {/* Global Discard Card Dealing Animation */}
-      {discardCardDealt && (
-        <CardDealingOverlay>
-          <DealingMessage>
-            <strong>Turning over first card for discard pile...</strong>
-            <br />
-            <PlayingCard
-              rank={discardCardDealt.card.rank}
-              suit={discardCardDealt.card.suit}
-              size="large"
-              style={{ marginTop: '1rem' }}
-            />
-          </DealingMessage>
-        </CardDealingOverlay>
-      )}
 
       {/* Storm Results Overlay */}
       {stormResults && (

@@ -299,41 +299,51 @@ io.on('connection', (socket) => {
 
   // Handle continue to storm (after dealer selection)
   socket.on('continue-to-storm', () => {
+    console.log(`🌊 Continue to storm requested by ${socket.id}`);
+    
     const player = playerSockets.get(socket.id);
-    if (!player || !player.roomId) return;
+    if (!player || !player.roomId) {
+      console.log(`❌ Player ${socket.id} not in a room`);
+      return;
+    }
 
     const room = gameRooms.get(player.roomId);
-    if (!room) return;
+    if (!room) {
+      console.log(`❌ Room ${player.roomId} not found`);
+      return;
+    }
 
     // Only host can continue
     if (room.host.id !== socket.id) {
+      console.log(`❌ Player ${socket.id} is not the host`);
       socket.emit('error', { message: 'Only the host can continue.' });
       return;
     }
 
     // Must be in dealer-selection stage with dealer determined, OR already in storm stage
     if (room.gameState.currentStage !== 'dealer-selection' && room.gameState.currentStage !== 'storm') {
+      console.log(`❌ Invalid stage for continue-to-storm: ${room.gameState.currentStage}`);
       socket.emit('error', { message: 'Not in correct stage for storm continuation.' });
       return;
     }
 
     const dealerExists = room.players.some(p => p.dealerButton);
     if (!dealerExists) {
+      console.log(`❌ Dealer not yet determined in room ${room.id}`);
       socket.emit('error', { message: 'Dealer not yet determined.' });
       return;
     }
     
     // Only advance if not already in storm stage
     if (room.gameState.currentStage === 'dealer-selection') {
+      console.log(`🎯 Advancing to storm stage in room ${room.id}`);
       room.advanceToNextStage();
       
-      // Start animated card dealing after stage setup
-      setTimeout(() => {
-        room.startAnimatedCardDealing(io, playerSockets);
-      }, 500); // Small delay for better UX
+      // Deal cards and start storm immediately
+      room.dealCardsAndStartStorm(io, playerSockets);
     }
 
-    console.log(`Storm stage started in room: ${room.name}`);
+    console.log(`✅ Storm stage started in room: ${room.name}`);
   });
 
   // Handle continue to next stage after Storm results
@@ -358,18 +368,15 @@ io.on('connection', (socket) => {
 
     console.log(`🎯 Host continuing to next stage after Storm results`);
 
+    console.log(`🎯 Storm completed for room ${player.roomId}. Current stormRound: ${room.gameState.stormRound}`);
+    
     // Reset storm complete flag
     room.gameState.stormComplete = false;
 
-    // Advance to next stage
-    if (room.gameState.stormRound === 1) {
-      // First storm, go to lane selection
-      room.advanceToNextStage(); // lane-selection
-    } else {
-      // Subsequent storms, go to coin stage
-      room.gameState.currentStage = 'coin';
-      room.setupCoinStage();
-    }
+    // Advance to next stage using GameState logic
+    console.log(`🔄 Current stage before advancement: ${room.gameState.currentStage}`);
+    room.advanceToNextStage();
+    console.log(`🔄 Stage after advancement: ${room.gameState.currentStage}`);
 
     // Send updated room data to all players
     room.players.forEach(roomPlayer => {
@@ -553,7 +560,7 @@ io.on('connection', (socket) => {
     }
 
     // Check if lane is available
-    const laneOccupied = room.players.some(p => p.lane === data.lane && p.id !== socket.id);
+    const laneOccupied = room.players.some(p => p.lane === data.lane && p.id !== player.id);
     if (laneOccupied) {
       socket.emit('error', { message: 'Lane already selected' });
       return;
@@ -561,7 +568,7 @@ io.on('connection', (socket) => {
 
     // Set player's lane
     player.lane = data.lane;
-    room.gameState.setPlayerLane(socket.id, data.lane);
+    room.gameState.setPlayerLane(player.id, data.lane);
     
     // Advance to next player
     room.advanceToNextPlayer();
@@ -607,8 +614,14 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Place coin on track
-    room.gameState.placedCoins.set(data.position, coin);
+    // Place coin on track (use position-lane as key)
+    const coinKey = `${data.position}-${data.lane || 1}`;
+    room.gameState.placedCoins.set(coinKey, {
+      ...coin,
+      position: data.position,
+      lane: data.lane || 1,
+      placedBy: player.id
+    });
     
     io.to(player.roomId).emit('coin-placed', {
       playerId: socket.id,
@@ -652,6 +665,142 @@ io.on('connection', (socket) => {
     io.to(player.roomId).emit('stage-advanced', {
       room: room.toJSON()
     });
+  });
+
+  // Handle continue to racing stage (host only)
+  socket.on('continue-to-racing', () => {
+    const player = playerSockets.get(socket.id);
+    if (!player || !player.roomId) return;
+
+    const room = gameRooms.get(player.roomId);
+    if (!room) return;
+
+    // Only host can continue
+    if (room.host.id !== socket.id) {
+      socket.emit('error', { message: 'Only the host can continue' });
+      return;
+    }
+
+    // Advance from coin stage to racing stage
+    room.gameState.currentStage = 'racing';
+    
+    io.to(player.roomId).emit('stage-advanced', {
+      room: room.toJSON()
+    });
+  });
+
+  // Racing Stage Socket Handlers
+  
+  // Handle dice roll
+  socket.on('roll-dice', (data) => {
+    console.log(`🎲 Player ${socket.id} rolling dice:`, data);
+    
+    const player = playerSockets.get(socket.id);
+    if (!player || !player.roomId) {
+      socket.emit('error', { message: 'Not in a room' });
+      return;
+    }
+    
+    const room = gameRooms.get(player.roomId);
+    if (!room) {
+      socket.emit('error', { message: 'Room not found' });
+      return;
+    }
+    
+    if (room.gameState.currentStage !== 'racing') {
+      socket.emit('error', { message: 'Not in racing stage' });
+      return;
+    }
+    
+    if (!room.isActivePlayer(player.id)) {
+      socket.emit('error', { message: 'Not your turn' });
+      return;
+    }
+    
+    // Roll dice and handle movement
+    const result = room.rollDice(player.id, data.diceType);
+    
+    if (result.success) {
+      // Send dice result to all players in room
+      io.to(player.roomId).emit('dice-rolled', {
+        playerId: player.id,
+        diceType: data.diceType,
+        values: result.values,
+        room: room.toDetailedJSON(player.id)
+      });
+      
+      // Send personalized room data to each player
+      room.players.forEach(roomPlayer => {
+        const playerSocket = [...playerSockets.entries()].find(([socketId, data]) => data.id === roomPlayer.id);
+        if (playerSocket) {
+          io.to(playerSocket[0]).emit('room-updated', {
+            room: room.toDetailedJSON(roomPlayer.id)
+          });
+        }
+      });
+    } else {
+      socket.emit('error', { message: result.error });
+    }
+  });
+
+  // Handle movement choice (after dice roll)
+  socket.on('choose-movement', (data) => {
+    console.log(`🚗 Player ${socket.id} choosing movement:`, data);
+    
+    const player = playerSockets.get(socket.id);
+    if (!player || !player.roomId) {
+      socket.emit('error', { message: 'Not in a room' });
+      return;
+    }
+    
+    const room = gameRooms.get(player.roomId);
+    if (!room) {
+      socket.emit('error', { message: 'Room not found' });
+      return;
+    }
+    
+    if (room.gameState.currentStage !== 'racing') {
+      socket.emit('error', { message: 'Not in racing stage' });
+      return;
+    }
+    
+    if (!room.isActivePlayer(player.id)) {
+      socket.emit('error', { message: 'Not your turn' });
+      return;
+    }
+    
+    // Process movement
+    const result = room.processMovement(player.id, data);
+    
+    if (result.success) {
+      // Send movement result to all players
+      io.to(player.roomId).emit('player-moved', {
+        playerId: player.id,
+        oldPosition: result.oldPosition,
+        newPosition: result.newPosition,
+        coinsTriggered: result.coinsTriggered,
+        room: room.toJSON()
+      });
+      
+      // Check if player finished race
+      if (result.raceComplete) {
+        io.to(player.roomId).emit('player-finished-race', {
+          playerId: player.id,
+          finishOrder: result.finishOrder,
+          room: room.toJSON()
+        });
+      }
+      
+      // Check if round is complete
+      if (result.roundComplete) {
+        io.to(player.roomId).emit('race-round-complete', {
+          results: result.results,
+          room: room.toJSON()
+        });
+      }
+    } else {
+      socket.emit('error', { message: result.error });
+    }
   });
 
   // Handle player disconnect

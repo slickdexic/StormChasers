@@ -26,11 +26,7 @@ const initialState = {
   
   // Game state
   gameState: null,
-  stormResults: null,
-  
-  // Animation state
-  cardDealingAnimation: null,
-  discardCardDealt: null
+  stormResults: null
 };
 
 function gameReducer(state, action) {
@@ -79,25 +75,6 @@ function gameReducer(state, action) {
         ...state, 
         currentRoom: state.currentRoom ? { ...state.currentRoom, ...roomWithoutPlayerData } : null,
         player: playerData ? { ...state.player, ...playerData } : state.player
-      };
-      
-    case 'CARD_DEALT_ANIMATION':
-      return {
-        ...state,
-        cardDealingAnimation: action.payload
-      };
-      
-    case 'DISCARD_CARD_DEALT':
-      return {
-        ...state,
-        discardCardDealt: action.payload
-      };
-      
-    case 'CLEAR_ANIMATIONS':
-      return {
-        ...state,
-        cardDealingAnimation: null,
-        discardCardDealt: null
       };
       
     case 'ADD_MESSAGE':
@@ -225,16 +202,6 @@ export function GameProvider({ children }) {
       }, 2000); // 2 second delay to let players see the final state
     });
 
-    socket.on('card-dealt', (data) => {
-      // This event is for animation purposes
-      dispatch({ type: 'CARD_DEALT_ANIMATION', payload: data });
-    });
-
-    socket.on('discard-card-dealt', (data) => {
-      // This event shows the initial discard card being dealt
-      dispatch({ type: 'DISCARD_CARD_DEALT', payload: data });
-    });
-
     socket.on('card-played', (data) => {
       console.log('📥 Received card-played event:', data);
       // Card was played successfully
@@ -273,6 +240,43 @@ export function GameProvider({ children }) {
 
     socket.on('lane-selection-complete', (data) => {
       console.log('🏁 Lane selection complete:', data);
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
+    // Coin stage event handlers
+    socket.on('coin-placed', (data) => {
+      console.log('🪙 Coin placed:', data);
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
+    socket.on('coin-stage-complete', (data) => {
+      console.log('🪙 Coin stage complete:', data);
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
+    // Racing stage event handlers
+    socket.on('dice-rolled', (data) => {
+      console.log('🎲 Dice rolled:', data);
+      dispatch({ type: 'UPDATE_ROOM_WITH_PLAYER_DATA', payload: data.room });
+    });
+
+    socket.on('player-moved', (data) => {
+      console.log('🚗 Player moved:', data);
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
+    socket.on('player-finished-race', (data) => {
+      console.log('🏁 Player finished race:', data);
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
+    socket.on('race-round-complete', (data) => {
+      console.log('🏆 Race round complete:', data);
+      dispatch({ type: 'UPDATE_ROOM', payload: data.room });
+    });
+
+    socket.on('stage-advanced', (data) => {
+      console.log('📈 Stage advanced:', data);
       dispatch({ type: 'UPDATE_ROOM', payload: data.room });
     });
 
@@ -385,6 +389,44 @@ export function GameProvider({ children }) {
         state.socket.emit('continue-to-next-stage');
         // Clear storm results
         dispatch({ type: 'STORM_STAGE_COMPLETE', payload: { results: null } });
+      }
+    },
+
+    // Coin stage actions
+    placeCoin: (coinId, position, lane) => {
+      console.log('🪙 Client: Attempting to place coin:', coinId, 'at position:', position, 'lane:', lane);
+      if (state.socket) {
+        state.socket.emit('place-coin', { coinId, position, lane });
+      }
+    },
+
+    continueToRacing: () => {
+      console.log('🏁 Client: Continue to racing stage');
+      if (state.socket) {
+        state.socket.emit('continue-to-racing', {});
+      }
+    },
+
+    // Racing stage actions
+    rollDice: (diceType = 'movement') => {
+      console.log('🎲 Client: Rolling dice:', diceType);
+      if (state.socket) {
+        state.socket.emit('roll-dice', { diceType });
+      }
+    },
+
+    chooseMovement: (movementData) => {
+      console.log('🚗 Client: Choosing movement:', movementData);
+      if (state.socket) {
+        state.socket.emit('choose-movement', movementData);
+      }
+    },
+
+    // Lane selection actions
+    selectLane: (laneId) => {
+      console.log('🛣️ Client: Selecting lane:', laneId);
+      if (state.socket) {
+        state.socket.emit('select-lane', { laneId });
       }
     }
   };

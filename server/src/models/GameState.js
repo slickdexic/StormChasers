@@ -448,6 +448,23 @@ class GameState {
 
   // Advance to next stage
   nextStage() {
+    console.log(`🎯 GameState.nextStage() called. Current stage: ${this.currentStage}, stormRound: ${this.stormRound}`);
+    
+    // Special handling for post-storm progression
+    if (this.currentStage === 'storm') {
+      if (this.stormRound === 1) {
+        // First storm, go to lane selection
+        console.log(`🛣️ First storm completed, advancing to lane-selection`);
+        this.currentStage = 'lane-selection';
+      } else {
+        // Subsequent storms, go to coin stage
+        console.log(`🪙 Subsequent storm completed, advancing to coin`);
+        this.currentStage = 'coin';
+      }
+      return;
+    }
+    
+    // Normal linear progression for other stages
     const stageOrder = ['lobby', 'dealer-selection', 'storm', 'lane-selection', 'coin', 'racing'];
     const currentIndex = stageOrder.indexOf(this.currentStage);
     
@@ -457,6 +474,7 @@ class GameState {
       // Special handling for certain stage transitions
       if (this.currentStage === 'storm') {
         this.stormRound++;
+        console.log(`⛈️ Storm round incremented to: ${this.stormRound}`);
       } else if (this.currentStage === 'racing') {
         this.raceRound++;
       }

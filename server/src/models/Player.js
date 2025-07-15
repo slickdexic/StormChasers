@@ -18,6 +18,9 @@ class Player {
     this.isActive = false; // Current turn indicator
     this.dealerButton = false; // Has dealer button
     
+    // Racing-specific state
+    this.lastDiceRoll = null; // Stores last dice roll for movement processing
+    
     // Stage-specific state
     this.stormFinishOrder = null; // Storm stage finishing position
     this.selectedDealerCard = null; // Card selected in dealer selection
