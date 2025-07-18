@@ -244,18 +244,22 @@ const RaceTrack = ({
   const handleWheel = (e) => {
     if (!panEnabled) return;
     e.preventDefault();
-    const newZoom = Math.max(0.5, Math.min(zoom - e.deltaY * 0.001, 5));
-    
     const containerRect = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - containerRect.left;
     const mouseY = e.clientY - containerRect.top;
 
-    const worldX = (mouseX - panX) / zoom;
-    const worldY = (mouseY - panY) / zoom;
-
-    setPanX(mouseX - worldX * newZoom);
-    setPanY(mouseY - worldY * newZoom);
-    setZoom(newZoom);
+    setZoom(prevZoom => {
+      const newZoom = Math.max(0.5, Math.min(prevZoom - e.deltaY * 0.001, 5));
+      setPanX(prevPanX => {
+        const worldX = (mouseX - prevPanX) / prevZoom;
+        return mouseX - worldX * newZoom;
+      });
+      setPanY(prevPanY => {
+        const worldY = (mouseY - prevPanY) / prevZoom;
+        return mouseY - worldY * newZoom;
+      });
+      return newZoom;
+    });
   };
 
   const handleResetView = () => {

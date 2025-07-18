@@ -244,7 +244,7 @@ function WelcomeScreen() {
   const selectName = (name) => {
     setPlayerName(name);
     setShowAutocomplete(false);
-    inputRef.current?.focus();
+    // Do not refocus input, let user continue naturally
   };
 
   const filteredNames = previousNames.filter(name => 

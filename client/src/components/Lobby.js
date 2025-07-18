@@ -378,7 +378,7 @@ function Lobby() {
   const selectRoomName = (name) => {
     setFormData({...formData, roomName: name});
     setShowRoomAutocomplete(false);
-    roomInputRef.current?.focus();
+    // Do not refocus input, let user continue naturally
   };
 
   const filteredRoomNames = previousRoomNames.filter(name => 
